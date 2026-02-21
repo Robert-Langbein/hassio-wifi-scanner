@@ -14,3 +14,4 @@ stores observations in SQLite, provides an Ingress UI, and emits events for auto
 
 - One WiFi interface is supported (`wifi_interface`), default `wlan0`.
 - Single-interface setups are allowed, but scan stability may improve with a dedicated USB adapter.
+- Scan logs are visible in add-on logs. Control verbosity with `log_level` (`error|warning|info|debug`).

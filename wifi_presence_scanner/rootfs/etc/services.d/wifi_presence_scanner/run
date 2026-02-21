@@ -34,6 +34,7 @@ PY
 
 export PYTHONPATH="/opt/wifi_presence_scanner/src"
 export WIFI_INTERFACE="$(read_config wifi_interface wlan0)"
+export LOG_LEVEL="$(read_config log_level info)"
 export SCAN_INTERVAL_SEC="$(read_config scan_interval_sec 30)"
 export DISAPPEAR_MISSED_SCANS="$(read_config disappear_missed_scans 2)"
 export RETENTION_DAYS="$(read_config retention_days 30)"

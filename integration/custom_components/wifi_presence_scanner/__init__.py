@@ -7,7 +7,6 @@ from typing import Any
 
 from homeassistant.components.frontend import async_register_built_in_panel, async_remove_panel
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 

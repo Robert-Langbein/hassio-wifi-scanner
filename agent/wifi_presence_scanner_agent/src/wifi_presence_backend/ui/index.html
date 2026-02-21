@@ -7,22 +7,49 @@
     <link rel="stylesheet" href="/ui/styles.css" />
   </head>
   <body>
-    <main class="shell">
-      <header class="topbar">
-        <h1>WiFi Presence Scanner</h1>
-        <button id="refreshButton" type="button">Refresh</button>
+    <main class="app-shell">
+      <header class="app-header">
+        <div>
+          <p class="eyebrow">Home Assistant WiFi Presence</p>
+          <h1>WiFi Presence Scanner</h1>
+        </div>
+        <div class="header-actions">
+          <span id="healthBadge" class="badge badge-neutral">Unknown</span>
+          <button id="refreshButton" type="button">Refresh</button>
+          <button id="forceScanButton" type="button">Force Scan</button>
+          <button id="purgeButton" type="button" class="danger">Purge</button>
+        </div>
       </header>
 
+      <section class="kpi-grid">
+        <article class="kpi-card">
+          <p>Visible Now</p>
+          <strong id="kpiVisible">0</strong>
+        </article>
+        <article class="kpi-card">
+          <p>Last Scan</p>
+          <strong id="kpiLastScan">-</strong>
+        </article>
+        <article class="kpi-card">
+          <p>Rules</p>
+          <strong id="kpiRules">0</strong>
+        </article>
+        <article class="kpi-card">
+          <p>Last Error</p>
+          <strong id="kpiError">none</strong>
+        </article>
+      </section>
+
       <section class="panel">
-        <h2>Search & Filters</h2>
-        <div class="grid">
+        <h2>Filters</h2>
+        <div class="filter-grid">
           <label>
             Search
-            <input id="queryInput" placeholder="SSID, BSSID, Vendor" />
+            <input id="queryInput" placeholder="SSID, BSSID, vendor" />
           </label>
           <label>
             Rule ID
-            <input id="ruleInput" placeholder="e.g. 1" />
+            <input id="ruleInput" type="number" min="1" />
           </label>
           <label>
             Short Repeat
@@ -32,79 +59,158 @@
             </select>
           </label>
           <label>
-            Limit
-            <input id="limitInput" type="number" min="1" max="1000" value="100" />
+            From
+            <input id="fromInput" type="datetime-local" />
+          </label>
+          <label>
+            To
+            <input id="toInput" type="datetime-local" />
+          </label>
+          <label>
+            Scan Status
+            <select id="scanStatusInput">
+              <option value="">Any</option>
+              <option value="ok">OK</option>
+              <option value="error">Error</option>
+              <option value="running">Running</option>
+            </select>
           </label>
         </div>
       </section>
 
       <section class="panel">
-        <h2>Health</h2>
-        <pre id="healthOutput">Loading...</pre>
+        <div class="panel-head">
+          <h2>Networks</h2>
+          <div class="pager">
+            <button id="networksPrevButton" type="button">Prev</button>
+            <span id="networksPageLabel">Page 1</span>
+            <button id="networksNextButton" type="button">Next</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th data-sort="currently_visible">Visible</th>
+                <th data-sort="ssid">SSID</th>
+                <th data-sort="bssid">BSSID</th>
+                <th data-sort="seen_count">Seen</th>
+                <th data-sort="strongest_rssi">Strongest RSSI</th>
+                <th data-sort="last_seen">Last Seen</th>
+              </tr>
+            </thead>
+            <tbody id="networksBody"></tbody>
+          </table>
+        </div>
       </section>
 
       <section class="panel">
-        <h2>Networks</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Visible</th>
-              <th>SSID</th>
-              <th>BSSID</th>
-              <th>Seen</th>
-              <th>Strongest RSSI</th>
-              <th>Last Seen</th>
-            </tr>
-          </thead>
-          <tbody id="networksBody"></tbody>
-        </table>
+        <div class="panel-head">
+          <h2>Scan Runs</h2>
+          <div class="pager">
+            <button id="runsPrevButton" type="button">Prev</button>
+            <span id="runsPageLabel">Page 1</span>
+            <button id="runsNextButton" type="button">Next</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Status</th>
+                <th>Started</th>
+                <th>Duration</th>
+                <th>Seen</th>
+                <th>New</th>
+                <th>Gone</th>
+                <th>Rules</th>
+                <th>Trigger</th>
+              </tr>
+            </thead>
+            <tbody id="runsBody"></tbody>
+          </table>
+        </div>
       </section>
 
       <section class="panel">
         <h2>Rules</h2>
-        <form id="ruleForm">
-          <div class="grid">
-            <label>
-              Name
-              <input name="name" required />
-            </label>
-            <label>
-              SSID Regex
-              <input name="ssid_regex" />
-            </label>
-            <label>
-              BSSID Prefix CSV
-              <input name="bssid_prefix_csv" placeholder="AA:BB:CC,11:22:33" />
-            </label>
-            <label>
-              Min RSSI
-              <input name="min_rssi" type="number" />
-            </label>
-            <label>
-              Cooldown (sec)
-              <input name="cooldown_sec" type="number" value="0" min="0" />
-            </label>
-          </div>
+        <form id="ruleForm" class="rule-form">
+          <label>
+            Name
+            <input name="name" required />
+          </label>
+          <label>
+            SSID Regex
+            <input name="ssid_regex" />
+          </label>
+          <label>
+            BSSID Prefix CSV
+            <input name="bssid_prefix_csv" placeholder="AA:BB:CC,11:22:33" />
+          </label>
+          <label>
+            Min RSSI
+            <input name="min_rssi" type="number" />
+          </label>
+          <label>
+            Cooldown (sec)
+            <input name="cooldown_sec" type="number" min="0" value="0" />
+          </label>
           <button type="submit">Create Rule</button>
         </form>
-        <table>
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Name</th>
-              <th>Enabled</th>
-              <th>Regex</th>
-              <th>BSSID Prefix</th>
-              <th>Min RSSI</th>
-              <th>Cooldown</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody id="rulesBody"></tbody>
-        </table>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Enabled</th>
+                <th>Regex</th>
+                <th>BSSID Prefix</th>
+                <th>RSSI</th>
+                <th>Cooldown</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="rulesBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Health JSON</h2>
+        <pre id="healthOutput">Loading...</pre>
       </section>
     </main>
 
+    <aside id="runDrawer" class="drawer hidden" aria-hidden="true">
+      <div class="drawer-head">
+        <h3 id="runDrawerTitle">Scan Run</h3>
+        <button id="runDrawerClose" type="button">Close</button>
+      </div>
+      <pre id="runDetailOutput"></pre>
+      <h4>Observations</h4>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>SSID</th>
+              <th>BSSID</th>
+              <th>RSSI</th>
+              <th>Channel</th>
+              <th>Seen At</th>
+            </tr>
+          </thead>
+          <tbody id="runObservationsBody"></tbody>
+        </table>
+      </div>
+    </aside>
+
+    <div id="toast" class="toast hidden"></div>
+
+    <script>
+      window.WPS_API_BASE = window.WPS_API_BASE || "/v1";
+    </script>
     <script src="/ui/app.js" type="module"></script>
   </body>
 </html>

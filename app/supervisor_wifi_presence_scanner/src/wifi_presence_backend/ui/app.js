@@ -1,149 +1,439 @@
-const healthOutput = document.getElementById("healthOutput");
-const networksBody = document.getElementById("networksBody");
-const rulesBody = document.getElementById("rulesBody");
-const refreshButton = document.getElementById("refreshButton");
-const ruleForm = document.getElementById("ruleForm");
+const API_BASE = window.WPS_API_BASE || "/v1";
 
-const queryInput = document.getElementById("queryInput");
-const ruleInput = document.getElementById("ruleInput");
-const shortRepeatInput = document.getElementById("shortRepeatInput");
-const limitInput = document.getElementById("limitInput");
+const state = {
+  networks: {
+    limit: 100,
+    offset: 0,
+    items: [],
+    sortKey: "last_seen",
+    sortDirection: "desc",
+  },
+  runs: {
+    limit: 50,
+    offset: 0,
+    items: [],
+  },
+  rules: [],
+  health: null,
+};
+
+const elements = {
+  healthBadge: document.getElementById("healthBadge"),
+  healthOutput: document.getElementById("healthOutput"),
+  refreshButton: document.getElementById("refreshButton"),
+  forceScanButton: document.getElementById("forceScanButton"),
+  purgeButton: document.getElementById("purgeButton"),
+  queryInput: document.getElementById("queryInput"),
+  ruleInput: document.getElementById("ruleInput"),
+  shortRepeatInput: document.getElementById("shortRepeatInput"),
+  fromInput: document.getElementById("fromInput"),
+  toInput: document.getElementById("toInput"),
+  scanStatusInput: document.getElementById("scanStatusInput"),
+  networksBody: document.getElementById("networksBody"),
+  networksPrevButton: document.getElementById("networksPrevButton"),
+  networksNextButton: document.getElementById("networksNextButton"),
+  networksPageLabel: document.getElementById("networksPageLabel"),
+  runsBody: document.getElementById("runsBody"),
+  runsPrevButton: document.getElementById("runsPrevButton"),
+  runsNextButton: document.getElementById("runsNextButton"),
+  runsPageLabel: document.getElementById("runsPageLabel"),
+  kpiVisible: document.getElementById("kpiVisible"),
+  kpiLastScan: document.getElementById("kpiLastScan"),
+  kpiRules: document.getElementById("kpiRules"),
+  kpiError: document.getElementById("kpiError"),
+  ruleForm: document.getElementById("ruleForm"),
+  rulesBody: document.getElementById("rulesBody"),
+  runDrawer: document.getElementById("runDrawer"),
+  runDrawerTitle: document.getElementById("runDrawerTitle"),
+  runDrawerClose: document.getElementById("runDrawerClose"),
+  runDetailOutput: document.getElementById("runDetailOutput"),
+  runObservationsBody: document.getElementById("runObservationsBody"),
+  toast: document.getElementById("toast"),
+};
+
+function showToast(text) {
+  elements.toast.textContent = text;
+  elements.toast.classList.remove("hidden");
+  window.setTimeout(() => elements.toast.classList.add("hidden"), 2200);
+}
+
+function endpoint(path) {
+  const base = API_BASE.endsWith("/") ? API_BASE.slice(0, -1) : API_BASE;
+  const suffix = path.startsWith("/") ? path : `/${path}`;
+  return `${base}${suffix}`;
+}
+
+async function requestJson(path, init) {
+  const response = await fetch(endpoint(path), init);
+  if (!response.ok) {
+    const raw = await response.text();
+    throw new Error(`${response.status} ${raw}`);
+  }
+  return response.json();
+}
+
+function toIso(value) {
+  if (!value) {
+    return "";
+  }
+  return new Date(value).toISOString();
+}
 
 function toQuery(params) {
-  const sp = new URLSearchParams();
+  const query = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
     if (value === undefined || value === null || value === "") {
       return;
     }
-    sp.set(key, String(value));
+    query.set(key, String(value));
   });
-  return sp.toString();
+  return query.toString();
 }
 
-async function getJson(path, init) {
-  const res = await fetch(path, init);
-  if (!res.ok) {
-    const raw = await res.text();
-    throw new Error(`${res.status} ${raw}`);
+function formatDate(value) {
+  if (!value) {
+    return "-";
   }
-  return res.json();
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString();
 }
 
-function renderHealth(data) {
-  healthOutput.textContent = JSON.stringify(data, null, 2);
+function formatDuration(ms) {
+  if (ms === null || ms === undefined) {
+    return "-";
+  }
+  if (ms < 1000) {
+    return `${ms} ms`;
+  }
+  return `${(ms / 1000).toFixed(2)} s`;
 }
 
-function renderNetworks(items) {
-  networksBody.innerHTML = "";
-  items.forEach((item) => {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
+function escapeHtml(text) {
+  return String(text)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function sortNetworks(items) {
+  const key = state.networks.sortKey;
+  const direction = state.networks.sortDirection === "asc" ? 1 : -1;
+
+  return [...items].sort((left, right) => {
+    const a = left[key] ?? "";
+    const b = right[key] ?? "";
+    if (typeof a === "number" && typeof b === "number") {
+      return (a - b) * direction;
+    }
+    return String(a).localeCompare(String(b)) * direction;
+  });
+}
+
+function renderHealth() {
+  const health = state.health || {};
+  const ok = Boolean(health.ok);
+  elements.healthBadge.textContent = ok ? "Healthy" : "Error";
+  elements.healthBadge.classList.remove("badge-neutral", "badge-ok", "badge-error");
+  elements.healthBadge.classList.add(ok ? "badge-ok" : "badge-error");
+
+  elements.kpiVisible.textContent = String(health.currently_visible ?? 0);
+  elements.kpiLastScan.textContent = formatDate(health.last_scan_finished_at);
+  elements.kpiRules.textContent = String(state.rules.length);
+  elements.kpiError.textContent = health.last_error ? String(health.last_error) : "none";
+  elements.healthOutput.textContent = JSON.stringify(health, null, 2);
+}
+
+function renderNetworks() {
+  const rows = sortNetworks(state.networks.items);
+  elements.networksBody.innerHTML = "";
+
+  if (rows.length === 0) {
+    elements.networksBody.innerHTML = '<tr><td colspan="6">No networks found.</td></tr>';
+  }
+
+  rows.forEach((item) => {
+    const row = document.createElement("tr");
+    row.innerHTML = `
       <td>${item.currently_visible ? "yes" : "no"}</td>
-      <td>${item.ssid || "<hidden>"}</td>
-      <td><code>${item.bssid}</code></td>
+      <td>${escapeHtml(item.ssid || "<hidden>")}</td>
+      <td><code>${escapeHtml(item.bssid)}</code></td>
       <td>${item.seen_count}</td>
       <td>${item.strongest_rssi}</td>
-      <td>${item.last_seen}</td>
+      <td>${formatDate(item.last_seen)}</td>
     `;
-    networksBody.appendChild(tr);
+    elements.networksBody.appendChild(row);
   });
+
+  const currentPage = Math.floor(state.networks.offset / state.networks.limit) + 1;
+  elements.networksPageLabel.textContent = `Page ${currentPage}`;
+  elements.networksPrevButton.disabled = state.networks.offset === 0;
+  elements.networksNextButton.disabled = state.networks.items.length < state.networks.limit;
 }
 
-function renderRules(items) {
-  rulesBody.innerHTML = "";
-  items.forEach((item) => {
-    const tr = document.createElement("tr");
-    const toggleButton = document.createElement("button");
-    toggleButton.type = "button";
-    toggleButton.textContent = item.enabled ? "Disable" : "Enable";
-    toggleButton.addEventListener("click", async () => {
-      await getJson(`/v1/rules/${item.id}`, {
+function renderRuns() {
+  elements.runsBody.innerHTML = "";
+  if (state.runs.items.length === 0) {
+    elements.runsBody.innerHTML = '<tr><td colspan="9">No scan runs found.</td></tr>';
+  }
+
+  state.runs.items.forEach((run) => {
+    const row = document.createElement("tr");
+    row.classList.add("row-clickable");
+    row.innerHTML = `
+      <td>${run.id}</td>
+      <td class="status-${escapeHtml(run.status)}">${escapeHtml(run.status)}</td>
+      <td>${formatDate(run.started_at)}</td>
+      <td>${formatDuration(run.duration_ms)}</td>
+      <td>${run.seen_total}</td>
+      <td>${run.new_count}</td>
+      <td>${run.disappeared_count}</td>
+      <td>${run.rule_matches}</td>
+      <td>${escapeHtml(run.trigger || "-")}</td>
+    `;
+    row.addEventListener("click", () => openRunDetail(run.id));
+    elements.runsBody.appendChild(row);
+  });
+
+  const currentPage = Math.floor(state.runs.offset / state.runs.limit) + 1;
+  elements.runsPageLabel.textContent = `Page ${currentPage}`;
+  elements.runsPrevButton.disabled = state.runs.offset === 0;
+  elements.runsNextButton.disabled = state.runs.items.length < state.runs.limit;
+}
+
+function renderRules() {
+  elements.rulesBody.innerHTML = "";
+  if (state.rules.length === 0) {
+    elements.rulesBody.innerHTML = '<tr><td colspan="8">No rules configured.</td></tr>';
+  }
+
+  state.rules.forEach((rule) => {
+    const row = document.createElement("tr");
+    const actions = document.createElement("td");
+
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.textContent = rule.enabled ? "Disable" : "Enable";
+    toggle.addEventListener("click", async () => {
+      await requestJson(`/rules/${rule.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled: !item.enabled }),
+        body: JSON.stringify({ enabled: !rule.enabled }),
       });
-      await loadAll();
+      await loadRules();
+      renderRules();
+      showToast("Rule updated");
     });
 
-    const deleteButton = document.createElement("button");
-    deleteButton.type = "button";
-    deleteButton.className = "danger";
-    deleteButton.textContent = "Delete";
-    deleteButton.addEventListener("click", async () => {
-      await getJson(`/v1/rules/${item.id}`, { method: "DELETE" });
-      await loadAll();
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "danger";
+    remove.textContent = "Delete";
+    remove.addEventListener("click", async () => {
+      await requestJson(`/rules/${rule.id}`, { method: "DELETE" });
+      await loadRules();
+      renderRules();
+      showToast("Rule deleted");
     });
 
-    tr.innerHTML = `
-      <td>${item.id}</td>
-      <td>${item.name}</td>
-      <td>${item.enabled ? "yes" : "no"}</td>
-      <td>${item.ssid_regex || ""}</td>
-      <td>${item.bssid_prefix_csv || ""}</td>
-      <td>${item.min_rssi ?? ""}</td>
-      <td>${item.cooldown_sec}</td>
-      <td></td>
+    actions.appendChild(toggle);
+    actions.append(" ");
+    actions.appendChild(remove);
+
+    row.innerHTML = `
+      <td>${rule.id}</td>
+      <td>${escapeHtml(rule.name)}</td>
+      <td>${rule.enabled ? "yes" : "no"}</td>
+      <td>${escapeHtml(rule.ssid_regex || "")}</td>
+      <td>${escapeHtml(rule.bssid_prefix_csv || "")}</td>
+      <td>${rule.min_rssi ?? ""}</td>
+      <td>${rule.cooldown_sec}</td>
     `;
-    tr.lastElementChild.appendChild(toggleButton);
-    tr.lastElementChild.append(" ");
-    tr.lastElementChild.appendChild(deleteButton);
-    rulesBody.appendChild(tr);
+
+    row.appendChild(actions);
+    elements.rulesBody.appendChild(row);
   });
 }
 
-async function loadAll() {
-  const params = {
-    query: queryInput.value.trim(),
-    rule: ruleInput.value.trim(),
-    short_repeat: shortRepeatInput.value,
-    limit: limitInput.value,
-  };
+async function loadHealth() {
+  state.health = await requestJson("/health");
+}
 
-  const [health, networks, rules] = await Promise.all([
-    getJson("/v1/health"),
-    getJson(`/v1/networks?${toQuery(params)}`),
-    getJson("/v1/rules"),
+async function loadRules() {
+  const payload = await requestJson("/rules");
+  state.rules = Array.isArray(payload.items) ? payload.items : [];
+}
+
+function currentNetworkQuery() {
+  return {
+    query: elements.queryInput.value.trim(),
+    rule: elements.ruleInput.value.trim(),
+    short_repeat: elements.shortRepeatInput.value,
+    from: toIso(elements.fromInput.value),
+    to: toIso(elements.toInput.value),
+    limit: state.networks.limit,
+    offset: state.networks.offset,
+  };
+}
+
+function currentRunsQuery() {
+  return {
+    status: elements.scanStatusInput.value,
+    from: toIso(elements.fromInput.value),
+    to: toIso(elements.toInput.value),
+    limit: state.runs.limit,
+    offset: state.runs.offset,
+  };
+}
+
+async function loadNetworks() {
+  const payload = await requestJson(`/networks?${toQuery(currentNetworkQuery())}`);
+  state.networks.items = Array.isArray(payload.items) ? payload.items : [];
+}
+
+async function loadRuns() {
+  const payload = await requestJson(`/scan-runs?${toQuery(currentRunsQuery())}`);
+  state.runs.items = Array.isArray(payload.items) ? payload.items : [];
+}
+
+async function openRunDetail(scanRunId) {
+  const [run, observations] = await Promise.all([
+    requestJson(`/scan-runs/${scanRunId}`),
+    requestJson(`/scan-runs/${scanRunId}/observations?limit=120&offset=0`),
   ]);
 
-  renderHealth(health);
-  renderNetworks(networks.items || []);
-  renderRules(rules.items || []);
+  elements.runDrawerTitle.textContent = `Scan Run #${scanRunId}`;
+  elements.runDetailOutput.textContent = JSON.stringify(run, null, 2);
+  elements.runObservationsBody.innerHTML = "";
+
+  const rows = Array.isArray(observations.items) ? observations.items : [];
+  if (rows.length === 0) {
+    elements.runObservationsBody.innerHTML = '<tr><td colspan="5">No observations</td></tr>';
+  }
+
+  rows.forEach((item) => {
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td>${escapeHtml(item.ssid || "<hidden>")}</td>
+      <td><code>${escapeHtml(item.bssid)}</code></td>
+      <td>${item.rssi}</td>
+      <td>${item.channel}</td>
+      <td>${formatDate(item.seen_at)}</td>
+    `;
+    elements.runObservationsBody.appendChild(row);
+  });
+
+  elements.runDrawer.classList.remove("hidden");
+  elements.runDrawer.setAttribute("aria-hidden", "false");
 }
 
-refreshButton.addEventListener("click", () => {
-  loadAll().catch((error) => {
-    healthOutput.textContent = error.message;
-  });
-});
+function closeRunDrawer() {
+  elements.runDrawer.classList.add("hidden");
+  elements.runDrawer.setAttribute("aria-hidden", "true");
+}
 
-[queryInput, ruleInput, shortRepeatInput, limitInput].forEach((element) => {
-  element.addEventListener("change", () => {
-    loadAll().catch((error) => {
-      healthOutput.textContent = error.message;
+async function refreshAll() {
+  await Promise.all([loadHealth(), loadRules(), loadNetworks(), loadRuns()]);
+  renderHealth();
+  renderNetworks();
+  renderRuns();
+  renderRules();
+}
+
+function bindEvents() {
+  elements.refreshButton.addEventListener("click", () => {
+    refreshAll().catch((error) => showToast(error.message));
+  });
+
+  elements.forceScanButton.addEventListener("click", async () => {
+    await requestJson("/scan/trigger", { method: "POST" });
+    showToast("Force scan triggered");
+    await refreshAll();
+  });
+
+  elements.purgeButton.addEventListener("click", async () => {
+    await requestJson("/history/purge", { method: "POST" });
+    showToast("History purge started");
+    await refreshAll();
+  });
+
+  [
+    elements.queryInput,
+    elements.ruleInput,
+    elements.shortRepeatInput,
+    elements.fromInput,
+    elements.toInput,
+    elements.scanStatusInput,
+  ].forEach((input) => {
+    input.addEventListener("change", () => {
+      state.networks.offset = 0;
+      state.runs.offset = 0;
+      refreshAll().catch((error) => showToast(error.message));
     });
   });
-});
 
-ruleForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const formData = new FormData(ruleForm);
-  const payload = {
-    name: String(formData.get("name") || "").trim(),
-    enabled: true,
-    ssid_regex: String(formData.get("ssid_regex") || "").trim() || null,
-    bssid_prefix_csv: String(formData.get("bssid_prefix_csv") || "").trim() || null,
-    min_rssi: formData.get("min_rssi") ? Number(formData.get("min_rssi")) : null,
-    cooldown_sec: Number(formData.get("cooldown_sec") || 0),
-  };
-  await getJson("/v1/rules", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+  elements.networksPrevButton.addEventListener("click", () => {
+    state.networks.offset = Math.max(0, state.networks.offset - state.networks.limit);
+    refreshAll().catch((error) => showToast(error.message));
   });
-  ruleForm.reset();
-  await loadAll();
-});
 
-loadAll().catch((error) => {
-  healthOutput.textContent = error.message;
+  elements.networksNextButton.addEventListener("click", () => {
+    state.networks.offset += state.networks.limit;
+    refreshAll().catch((error) => showToast(error.message));
+  });
+
+  elements.runsPrevButton.addEventListener("click", () => {
+    state.runs.offset = Math.max(0, state.runs.offset - state.runs.limit);
+    refreshAll().catch((error) => showToast(error.message));
+  });
+
+  elements.runsNextButton.addEventListener("click", () => {
+    state.runs.offset += state.runs.limit;
+    refreshAll().catch((error) => showToast(error.message));
+  });
+
+  document.querySelectorAll("th[data-sort]").forEach((header) => {
+    header.addEventListener("click", () => {
+      const key = header.getAttribute("data-sort");
+      if (!key) {
+        return;
+      }
+      if (state.networks.sortKey === key) {
+        state.networks.sortDirection = state.networks.sortDirection === "asc" ? "desc" : "asc";
+      } else {
+        state.networks.sortKey = key;
+        state.networks.sortDirection = "asc";
+      }
+      renderNetworks();
+    });
+  });
+
+  elements.ruleForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const formData = new FormData(elements.ruleForm);
+    const payload = {
+      name: String(formData.get("name") || "").trim(),
+      enabled: true,
+      ssid_regex: String(formData.get("ssid_regex") || "").trim() || null,
+      bssid_prefix_csv: String(formData.get("bssid_prefix_csv") || "").trim() || null,
+      min_rssi: formData.get("min_rssi") ? Number(formData.get("min_rssi")) : null,
+      cooldown_sec: Number(formData.get("cooldown_sec") || 0),
+    };
+    await requestJson("/rules", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    elements.ruleForm.reset();
+    showToast("Rule created");
+    await refreshAll();
+  });
+
+  elements.runDrawerClose.addEventListener("click", closeRunDrawer);
+}
+
+bindEvents();
+refreshAll().catch((error) => {
+  showToast(error.message);
+  elements.healthOutput.textContent = error.message;
 });

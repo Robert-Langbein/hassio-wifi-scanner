@@ -6,6 +6,7 @@
 2. Install add-on `WiFi Presence Scanner`.
 3. Configure add-on options:
    - `wifi_interface` (default `wlan0`)
+   - `log_level` (`error|warning|info|debug`, default `info`)
    - `scan_interval_sec` (default `30`)
    - `quiet_windows_json` (JSON array, one window per weekday)
 4. Start add-on.
@@ -33,3 +34,9 @@
 
 - `ignore_ssid_patterns`: `^MyHome$,^Printer-`
 - `ignore_bssid_prefixes`: `AA:BB:CC,11:22:33`
+
+## Add-on log output
+
+The add-on prints structured scan lines in Supervisor logs. Example:
+
+`ts=2026-02-21T17:10:00+0000 level=INFO logger=wifi_presence_scanner.scan event=scan_completed run_id=154 interface=wlan0 seen=19 new=2 disappeared=1 rules=1 duration_ms=463 status=ok trigger=scheduled`

@@ -4,7 +4,6 @@ import json
 import sqlite3
 import threading
 from contextlib import contextmanager
-from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterator
@@ -72,8 +71,13 @@ class Database:
                     finished_at TEXT,
                     source TEXT NOT NULL,
                     interface TEXT NOT NULL,
+                    trigger TEXT NOT NULL DEFAULT 'scheduled',
                     status TEXT NOT NULL,
-                    error TEXT
+                    error TEXT,
+                    seen_total INTEGER NOT NULL DEFAULT 0,
+                    new_count INTEGER NOT NULL DEFAULT 0,
+                    disappeared_count INTEGER NOT NULL DEFAULT 0,
+                    rule_matches INTEGER NOT NULL DEFAULT 0
                 );
 
                 CREATE TABLE IF NOT EXISTS network_observations (
@@ -152,8 +156,25 @@ class Database:
                 CREATE INDEX IF NOT EXISTS idx_rule_matches_matched_at ON rule_matches(matched_at);
                 CREATE INDEX IF NOT EXISTS idx_rule_matches_rule_id ON rule_matches(rule_id);
                 CREATE INDEX IF NOT EXISTS idx_emitted_events_created_at ON emitted_events(created_at);
+                CREATE INDEX IF NOT EXISTS idx_scan_runs_started_at ON scan_runs(started_at);
+                CREATE INDEX IF NOT EXISTS idx_scan_runs_status ON scan_runs(status);
                 """
             )
+
+            columns = {
+                row["name"]
+                for row in conn.execute("PRAGMA table_info(scan_runs)").fetchall()
+            }
+            for statement in (
+                "ALTER TABLE scan_runs ADD COLUMN trigger TEXT NOT NULL DEFAULT 'scheduled'",
+                "ALTER TABLE scan_runs ADD COLUMN seen_total INTEGER NOT NULL DEFAULT 0",
+                "ALTER TABLE scan_runs ADD COLUMN new_count INTEGER NOT NULL DEFAULT 0",
+                "ALTER TABLE scan_runs ADD COLUMN disappeared_count INTEGER NOT NULL DEFAULT 0",
+                "ALTER TABLE scan_runs ADD COLUMN rule_matches INTEGER NOT NULL DEFAULT 0",
+            ):
+                column_name = statement.split("ADD COLUMN ", maxsplit=1)[1].split(" ", maxsplit=1)[0]
+                if column_name not in columns:
+                    conn.execute(statement)
 
             cur = conn.execute("SELECT COUNT(*) AS cnt FROM schema_migrations WHERE version = 1")
             if cur.fetchone()["cnt"] == 0:
@@ -162,26 +183,51 @@ class Database:
                     (_utc_now_iso(),),
                 )
 
-    def begin_scan_run(self, *, source: str, interface: str) -> int:
+    def begin_scan_run(self, *, source: str, interface: str, trigger: str) -> int:
         with self._tx() as conn:
             cursor = conn.execute(
                 """
-                INSERT INTO scan_runs(started_at, source, interface, status)
-                VALUES(?, ?, ?, ?)
+                INSERT INTO scan_runs(started_at, source, interface, trigger, status)
+                VALUES(?, ?, ?, ?, ?)
                 """,
-                (_utc_now_iso(), source, interface, "running"),
+                (_utc_now_iso(), source, interface, trigger, "running"),
             )
             return int(cursor.lastrowid)
 
-    def finish_scan_run(self, *, scan_run_id: int, status: str, error: str | None) -> None:
+    def finish_scan_run(
+        self,
+        *,
+        scan_run_id: int,
+        status: str,
+        error: str | None,
+        seen_total: int = 0,
+        new_count: int = 0,
+        disappeared_count: int = 0,
+        rule_matches: int = 0,
+    ) -> None:
         with self._tx() as conn:
             conn.execute(
                 """
                 UPDATE scan_runs
-                SET finished_at = ?, status = ?, error = ?
+                SET finished_at = ?,
+                    status = ?,
+                    error = ?,
+                    seen_total = ?,
+                    new_count = ?,
+                    disappeared_count = ?,
+                    rule_matches = ?
                 WHERE id = ?
                 """,
-                (_utc_now_iso(), status, error, scan_run_id),
+                (
+                    _utc_now_iso(),
+                    status,
+                    error,
+                    seen_total,
+                    new_count,
+                    disappeared_count,
+                    rule_matches,
+                    scan_run_id,
+                ),
             )
 
     def insert_observations(self, *, scan_run_id: int, observations: list[NetworkObservation]) -> None:
@@ -659,13 +705,138 @@ class Database:
         with self._tx() as conn:
             row = conn.execute(
                 """
-                SELECT id, started_at, finished_at, status, error, source, interface
+                SELECT
+                    id,
+                    started_at,
+                    finished_at,
+                    status,
+                    error,
+                    source,
+                    interface,
+                    trigger,
+                    seen_total,
+                    new_count,
+                    disappeared_count,
+                    rule_matches
                 FROM scan_runs
                 ORDER BY id DESC
                 LIMIT 1
                 """
             ).fetchone()
             return dict(row) if row else {}
+
+    def list_scan_runs(
+        self,
+        *,
+        status: str | None,
+        from_dt: str | None,
+        to_dt: str | None,
+        limit: int,
+        offset: int,
+    ) -> list[dict[str, Any]]:
+        where_parts: list[str] = []
+        args: list[Any] = []
+        if status:
+            where_parts.append("sr.status = ?")
+            args.append(status)
+        if from_dt:
+            where_parts.append("sr.started_at >= ?")
+            args.append(from_dt)
+        if to_dt:
+            where_parts.append("sr.started_at <= ?")
+            args.append(to_dt)
+
+        where_clause = ""
+        if where_parts:
+            where_clause = "WHERE " + " AND ".join(where_parts)
+
+        sql = f"""
+            SELECT
+                sr.id,
+                sr.started_at,
+                sr.finished_at,
+                sr.source,
+                sr.interface,
+                sr.trigger,
+                sr.status,
+                sr.error,
+                sr.seen_total,
+                sr.new_count,
+                sr.disappeared_count,
+                sr.rule_matches,
+                CASE
+                    WHEN sr.finished_at IS NULL THEN NULL
+                    ELSE CAST((julianday(sr.finished_at) - julianday(sr.started_at)) * 86400000 AS INTEGER)
+                END AS duration_ms
+            FROM scan_runs sr
+            {where_clause}
+            ORDER BY sr.id DESC
+            LIMIT ? OFFSET ?
+        """
+        args.extend([limit, offset])
+        with self._tx() as conn:
+            rows = conn.execute(sql, tuple(args)).fetchall()
+            return [dict(row) for row in rows]
+
+    def get_scan_run(self, *, scan_run_id: int) -> dict[str, Any] | None:
+        with self._tx() as conn:
+            row = conn.execute(
+                """
+                SELECT
+                    sr.id,
+                    sr.started_at,
+                    sr.finished_at,
+                    sr.source,
+                    sr.interface,
+                    sr.trigger,
+                    sr.status,
+                    sr.error,
+                    sr.seen_total,
+                    sr.new_count,
+                    sr.disappeared_count,
+                    sr.rule_matches,
+                    CASE
+                        WHEN sr.finished_at IS NULL THEN NULL
+                        ELSE CAST((julianday(sr.finished_at) - julianday(sr.started_at)) * 86400000 AS INTEGER)
+                    END AS duration_ms,
+                    COUNT(no.id) AS observation_count
+                FROM scan_runs sr
+                LEFT JOIN network_observations no ON no.scan_run_id = sr.id
+                WHERE sr.id = ?
+                GROUP BY sr.id
+                """,
+                (scan_run_id,),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def list_scan_run_observations(
+        self,
+        *,
+        scan_run_id: int,
+        limit: int,
+        offset: int,
+    ) -> list[dict[str, Any]]:
+        with self._tx() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    id,
+                    ssid,
+                    bssid,
+                    bssid_hash,
+                    oui_vendor,
+                    rssi,
+                    channel,
+                    frequency_mhz,
+                    seen_at
+                FROM network_observations
+                WHERE scan_run_id = ?
+                ORDER BY id ASC
+                LIMIT ? OFFSET ?
+                """,
+                (scan_run_id, limit, offset),
+            ).fetchall()
+            return [dict(row) for row in rows]
 
     def count_currently_visible(self) -> int:
         with self._tx() as conn:

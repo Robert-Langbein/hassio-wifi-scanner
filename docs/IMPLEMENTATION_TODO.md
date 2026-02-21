@@ -20,6 +20,13 @@
 - [x] Implement REST API endpoints for health, networks, sessions, rules, short-repeat stats, trigger scan.
 - [x] Implement backend static UI with search/filter/rule management.
 - [x] Implement Home Assistant fallback panel view and API proxy endpoints.
+- [x] Add scan-run log endpoints (`/v1/scan-runs`, detail, observations) and integration proxy routes.
+- [x] Redesign Ingress + panel fallback UI to a shared HA-native layout with KPI cards, quick actions, and run details drawer.
+
+## Logging and observability
+- [x] Add configurable runtime log level (`error|warning|info|debug`) in add-on options.
+- [x] Emit structured scan summary lines for completed/skipped/failed runs.
+- [x] Keep HTTP access logs disabled by default and enable in debug mode.
 
 ## Home Assistant integration
 - [x] Create custom integration domain `wifi_presence_scanner`.

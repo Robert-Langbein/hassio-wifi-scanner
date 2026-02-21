@@ -26,6 +26,28 @@ Query params:
 ### `GET /v1/networks/{bssid}/sessions`
 Returns tracked presence sessions for one BSSID.
 
+### `GET /v1/scan-runs`
+Query params:
+
+- `status` (`ok|error|running`)
+- `from` (ISO datetime)
+- `to` (ISO datetime)
+- `limit`
+- `offset`
+
+Returns scan run summaries including `seen_total`, `new_count`, `disappeared_count`, and `rule_matches`.
+
+### `GET /v1/scan-runs/{id}`
+Returns one scan run with timing and counters.
+
+### `GET /v1/scan-runs/{id}/observations`
+Query params:
+
+- `limit`
+- `offset`
+
+Returns observations captured in one scan run.
+
 ### `GET /v1/rules`
 List fingerprint rules.
 

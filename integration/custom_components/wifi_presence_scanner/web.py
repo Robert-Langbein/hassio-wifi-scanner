@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import mimetypes
 from http import HTTPStatus
+from pathlib import Path
 from typing import Any
 
 from aiohttp.web import Response
@@ -10,6 +12,8 @@ from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
+
+FRONTEND_DIR = Path(__file__).resolve().parent / "frontend"
 
 
 def _pick_coordinator(hass: HomeAssistant):
@@ -20,81 +24,38 @@ def _pick_coordinator(hass: HomeAssistant):
     return None
 
 
+def _serve_frontend_file(path: Path) -> Response:
+    mime = mimetypes.guess_type(str(path))[0] or "application/octet-stream"
+    return Response(body=path.read_bytes(), content_type=mime)
+
+
 class WifiPresencePanelView(HomeAssistantView):
     url = "/api/wifi_presence_scanner/panel"
     name = "api:wifi_presence_scanner:panel"
     requires_auth = True
 
     async def get(self, request):
-        html = """
-<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>WiFi Presence Scanner</title>
-    <style>
-      body { font-family: "IBM Plex Sans", "Segoe UI", sans-serif; margin: 0; padding: 1rem; background: #f4f6f5; color: #123; }
-      .shell { display: grid; gap: 1rem; }
-      .panel { background: #fff; border: 1px solid #ccd9d3; border-radius: 12px; padding: 1rem; }
-      .grid { display: grid; gap: .6rem; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
-      input, select, button { padding: .5rem .6rem; border-radius: 8px; border: 1px solid #ccd9d3; }
-      button { background: #0a6f4f; color: #fff; border: 0; cursor: pointer; }
-      table { width: 100%; border-collapse: collapse; font-size: .9rem; }
-      th, td { border-bottom: 1px solid #e2ece8; text-align: left; padding: .45rem; }
-      pre { margin: 0; white-space: pre-wrap; }
-    </style>
-  </head>
-  <body>
-    <main class="shell">
-      <section class="panel">
-        <h2>Search</h2>
-        <div class="grid">
-          <input id="query" placeholder="SSID/BSSID/Vendor" />
-          <select id="shortRepeat"><option value="false">No short repeat</option><option value="true">Short repeat only</option></select>
-          <input id="limit" type="number" value="100" min="1" max="1000" />
-          <button id="refresh">Refresh</button>
-        </div>
-      </section>
-      <section class="panel"><h2>Health</h2><pre id="health"></pre></section>
-      <section class="panel"><h2>Networks</h2><table><thead><tr><th>Visible</th><th>SSID</th><th>BSSID</th><th>Seen</th><th>RSSI</th><th>Last</th></tr></thead><tbody id="rows"></tbody></table></section>
-    </main>
-    <script>
-      const query = document.getElementById('query');
-      const shortRepeat = document.getElementById('shortRepeat');
-      const limit = document.getElementById('limit');
-      const refresh = document.getElementById('refresh');
-      const health = document.getElementById('health');
-      const rows = document.getElementById('rows');
+        index_path = FRONTEND_DIR / "index.html"
+        if not index_path.is_file():
+            return Response(status=HTTPStatus.NOT_FOUND, text="panel assets not found")
+        return _serve_frontend_file(index_path)
 
-      async function api(path, init) {
-        const res = await fetch(path, init);
-        if (!res.ok) throw new Error(await res.text());
-        return await res.json();
-      }
 
-      async function load() {
-        const search = new URLSearchParams({ query: query.value, short_repeat: shortRepeat.value, limit: limit.value });
-        const [h, n] = await Promise.all([
-          api('/api/wifi_presence_scanner/health'),
-          api('/api/wifi_presence_scanner/networks?' + search.toString())
-        ]);
-        health.textContent = JSON.stringify(h, null, 2);
-        rows.innerHTML = '';
-        for (const item of n.items || []) {
-          const tr = document.createElement('tr');
-          tr.innerHTML = `<td>${item.currently_visible ? 'yes' : 'no'}</td><td>${item.ssid || ''}</td><td>${item.bssid}</td><td>${item.seen_count}</td><td>${item.strongest_rssi}</td><td>${item.last_seen}</td>`;
-          rows.appendChild(tr);
-        }
-      }
+class WifiPresenceAssetView(HomeAssistantView):
+    url = "/api/wifi_presence_scanner/assets/{filename:.*}"
+    name = "api:wifi_presence_scanner:asset"
+    requires_auth = True
 
-      refresh.addEventListener('click', () => load().catch((e) => (health.textContent = e.message)));
-      load().catch((e) => (health.textContent = e.message));
-    </script>
-  </body>
-</html>
-        """
-        return Response(text=html, content_type="text/html")
+    async def get(self, request, filename: str):
+        candidate = (FRONTEND_DIR / filename).resolve()
+        try:
+            candidate.relative_to(FRONTEND_DIR.resolve())
+        except ValueError:
+            return Response(status=HTTPStatus.FORBIDDEN, text="forbidden")
+
+        if not candidate.is_file():
+            return Response(status=HTTPStatus.NOT_FOUND, text="not_found")
+        return _serve_frontend_file(candidate)
 
 
 class WifiPresenceProxyView(HomeAssistantView):
@@ -115,6 +76,16 @@ class WifiPresenceProxyView(HomeAssistantView):
             elif method == "GET" and suffix.startswith("networks/") and suffix.endswith("/sessions"):
                 bssid = suffix.removeprefix("networks/").removesuffix("/sessions")
                 data = await client.network_sessions(bssid=bssid)
+            elif method == "GET" and suffix == "scan-runs":
+                params = {k: v for k, v in request.query.items()}
+                data = await client.scan_runs(params=params)
+            elif method == "GET" and suffix.startswith("scan-runs/") and suffix.endswith("/observations"):
+                scan_run_id = int(suffix.removeprefix("scan-runs/").removesuffix("/observations"))
+                params = {k: v for k, v in request.query.items()}
+                data = await client.scan_run_observations(scan_run_id=scan_run_id, params=params)
+            elif method == "GET" and suffix.startswith("scan-runs/"):
+                scan_run_id = int(suffix.removeprefix("scan-runs/"))
+                data = await client.scan_run_detail(scan_run_id=scan_run_id)
             elif method == "GET" and suffix == "rules":
                 data = await client.list_rules()
             elif method == "POST" and suffix == "rules":
@@ -161,4 +132,5 @@ class WifiPresenceProxyRootView(WifiPresenceProxyView):
 
 def async_register_views(hass: HomeAssistant) -> None:
     hass.http.register_view(WifiPresencePanelView)
+    hass.http.register_view(WifiPresenceAssetView)
     hass.http.register_view(WifiPresenceProxyRootView)

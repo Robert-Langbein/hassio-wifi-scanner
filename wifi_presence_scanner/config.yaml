@@ -23,6 +23,7 @@ map:
   - ssl:ro
 options:
   wifi_interface: wlan0
+  log_level: info
   scan_interval_sec: 30
   disappear_missed_scans: 2
   retention_days: 30
@@ -33,6 +34,7 @@ options:
   ignore_bssid_prefixes: ""
 schema:
   wifi_interface: str
+  log_level: match(^(error|warning|info|debug)$)
   scan_interval_sec: int
   disappear_missed_scans: int
   retention_days: int

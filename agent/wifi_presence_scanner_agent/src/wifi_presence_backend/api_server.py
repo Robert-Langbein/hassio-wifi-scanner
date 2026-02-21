@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import mimetypes
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -9,6 +10,8 @@ from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
 from .service import ScannerService
+
+_API_LOGGER = logging.getLogger("wifi_presence_scanner.api")
 
 
 class ApiServer:
@@ -20,18 +23,21 @@ class ApiServer:
         port: int,
         api_key: str | None,
         static_dir: Path | None = None,
+        enable_access_logs: bool = False,
     ) -> None:
         self._service = service
         self._host = host
         self._port = port
         self._api_key = api_key
         self._static_dir = static_dir
+        self._enable_access_logs = enable_access_logs
         self._httpd = ThreadingHTTPServer((host, port), self._build_handler())
 
     def _build_handler(self) -> type[BaseHTTPRequestHandler]:
         service = self._service
         api_key = self._api_key
         static_dir = self._static_dir
+        enable_access_logs = self._enable_access_logs
 
         class Handler(BaseHTTPRequestHandler):
             server_version = "wifi-presence-scanner/1.0"
@@ -136,11 +142,33 @@ class ApiServer:
                             payload=service.list_events(after_id=after_id, limit=limit),
                         )
                         return
+                    if parsed.path == "/v1/scan-runs":
+                        self._write_json(status=HTTPStatus.OK, payload=service.list_scan_runs(params=query))
+                        return
+                    if parsed.path.startswith("/v1/scan-runs/"):
+                        suffix = parsed.path.removeprefix("/v1/scan-runs/")
+                        if suffix.endswith("/observations"):
+                            scan_run_id = int(suffix.removesuffix("/observations"))
+                            self._write_json(
+                                status=HTTPStatus.OK,
+                                payload=service.list_scan_run_observations(
+                                    scan_run_id=scan_run_id,
+                                    params=query,
+                                ),
+                            )
+                            return
+                        scan_run_id = int(suffix)
+                        self._write_json(
+                            status=HTTPStatus.OK,
+                            payload=service.get_scan_run_detail(scan_run_id=scan_run_id),
+                        )
+                        return
 
                     self._write_json(status=HTTPStatus.NOT_FOUND, payload={"error": "not_found"})
                 except ValueError as exc:
                     self._write_json(status=HTTPStatus.BAD_REQUEST, payload={"error": str(exc)})
                 except Exception as exc:
+                    _API_LOGGER.exception("event=request_failed method=GET path=%s", parsed.path)
                     self._write_json(status=HTTPStatus.INTERNAL_SERVER_ERROR, payload={"error": str(exc)})
 
             def do_POST(self) -> None:  # noqa: N802
@@ -165,6 +193,7 @@ class ApiServer:
                 except ValueError as exc:
                     self._write_json(status=HTTPStatus.BAD_REQUEST, payload={"error": str(exc)})
                 except Exception as exc:
+                    _API_LOGGER.exception("event=request_failed method=POST path=%s", parsed.path)
                     self._write_json(status=HTTPStatus.INTERNAL_SERVER_ERROR, payload={"error": str(exc)})
 
             def do_PATCH(self) -> None:  # noqa: N802
@@ -185,6 +214,7 @@ class ApiServer:
                 except ValueError as exc:
                     self._write_json(status=HTTPStatus.BAD_REQUEST, payload={"error": str(exc)})
                 except Exception as exc:
+                    _API_LOGGER.exception("event=request_failed method=PATCH path=%s", parsed.path)
                     self._write_json(status=HTTPStatus.INTERNAL_SERVER_ERROR, payload={"error": str(exc)})
 
             def do_DELETE(self) -> None:  # noqa: N802
@@ -205,10 +235,17 @@ class ApiServer:
                 except ValueError as exc:
                     self._write_json(status=HTTPStatus.BAD_REQUEST, payload={"error": str(exc)})
                 except Exception as exc:
+                    _API_LOGGER.exception("event=request_failed method=DELETE path=%s", parsed.path)
                     self._write_json(status=HTTPStatus.INTERNAL_SERVER_ERROR, payload={"error": str(exc)})
 
             def log_message(self, format: str, *args: object) -> None:
-                return
+                if not enable_access_logs:
+                    return
+                _API_LOGGER.debug(
+                    "event=http_access client=%s message=%s",
+                    self.address_string(),
+                    format % args,
+                )
 
         return Handler
 

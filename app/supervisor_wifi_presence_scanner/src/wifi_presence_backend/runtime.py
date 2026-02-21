@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import signal
 import threading
@@ -10,6 +11,27 @@ from .config import load_scan_config
 from .db import Database
 from .scanner import IWScanner, SupervisorApiScanner
 from .service import EventPublisher, ScannerService
+
+_RUNTIME_LOGGER = logging.getLogger("wifi_presence_scanner.runtime")
+
+
+def configure_logging() -> str:
+    raw_level = os.getenv("LOG_LEVEL", "info").strip().upper()
+    level_map = {
+        "DEBUG": logging.DEBUG,
+        "INFO": logging.INFO,
+        "WARNING": logging.WARNING,
+        "ERROR": logging.ERROR,
+    }
+    level = level_map.get(raw_level, logging.INFO)
+
+    logging.basicConfig(
+        level=level,
+        format="ts=%(asctime)s level=%(levelname)s logger=%(name)s %(message)s",
+        datefmt="%Y-%m-%dT%H:%M:%S%z",
+        force=True,
+    )
+    return logging.getLevelName(level).lower()
 
 
 def build_scanner(*, source: str):
@@ -25,6 +47,9 @@ def build_scanner(*, source: str):
 
 
 def run_backend(*, source: str) -> None:
+    configured_log_level = configure_logging()
+    _RUNTIME_LOGGER.info("event=backend_start source=%s log_level=%s", source, configured_log_level)
+
     default_interface = "wlan0"
     config = load_scan_config(source=source, default_interface=default_interface)
 
@@ -57,12 +82,14 @@ def run_backend(*, source: str) -> None:
         port=port,
         api_key=api_key,
         static_dir=static_dir,
+        enable_access_logs=configured_log_level == "debug",
     )
 
     stop_event = threading.Event()
 
     def _stop(*_args: object) -> None:
         stop_event.set()
+        _RUNTIME_LOGGER.info("event=backend_stop source=%s", source)
         api.shutdown()
         service.stop()
         db.close()

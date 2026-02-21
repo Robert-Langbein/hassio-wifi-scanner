@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>WiFi Presence Scanner</title>
-    <link rel="stylesheet" href="/ui/styles.css" />
+    <link rel="stylesheet" href="/api/wifi_presence_scanner/assets/styles.css" />
   </head>
   <body>
     <main class="app-shell">
@@ -209,8 +209,8 @@
     <div id="toast" class="toast hidden"></div>
 
     <script>
-      window.WPS_API_BASE = window.WPS_API_BASE || "/v1";
+      window.WPS_API_BASE = "/api/wifi_presence_scanner";
     </script>
-    <script src="/ui/app.js" type="module"></script>
+    <script src="/api/wifi_presence_scanner/assets/app.js" type="module"></script>
   </body>
 </html>
