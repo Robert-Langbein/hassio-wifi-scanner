@@ -14,10 +14,11 @@ WiFi presence tracking solution for Home Assistant with support for:
 - Structured scan logs in add-on/agent runtime (`log_level`: `error|warning|info|debug`)
 - Search/filter list of scanned WiFi networks
 - Frequency-band visibility (`2.4/5/6 GHz`) in network and observation tables
+- Networks table shows `Max RSSI` (highest observed value in the selected history window)
 - Short-repeating network filter for courier-like patterns
 - Scan run history with detail drilldown (runs + observations)
 - Collapsible `Scan Runs` and `Health JSON` sections with per-browser state persistence
-- Rules help panel (`How rules work`) with examples for regex/prefix/RSSI/cooldown
+- Rules help panel (`Show help`) with examples for regex/prefix/RSSI/cooldown
 - Home Assistant events:
   - `wifi_presence_scanner_wifi_discovered`
   - `wifi_presence_scanner_wifi_disappeared`
@@ -82,14 +83,14 @@ WiFi presence tracking solution for Home Assistant with support for:
 
 If logs contain `Supervisor API error 403`, verify:
 
-1. Add-on is updated to at least `1.0.4` (`hassio_role: manager`).
+1. Add-on is updated to at least `1.0.5` (`hassio_role: manager`).
 2. Add-on repository has been reloaded in Home Assistant before update.
 3. Add-on was restarted after update.
 4. Configured `wifi_interface` exists on host (for example `wlan0`).
 
 At startup, the backend logs supervisor preflight checks for `/network/info` and `/network/interface/<iface>/info`, including a role requirement note for `/network/interface/<iface>/accesspoints`.
 
-If Ingress UI shows `404` in health/network sections while scan logs are successful, update to `1.0.4` or newer.
+If Ingress UI shows `404` in health/network sections while scan logs are successful, update to `1.0.5` or newer.
 
 ## Blueprint
 

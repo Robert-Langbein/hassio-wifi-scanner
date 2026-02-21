@@ -181,7 +181,7 @@ function applyCollapseState() {
   const rulesHelpExpanded = !state.ui.rulesHelpCollapsed;
   elements.rulesHelpContent.hidden = state.ui.rulesHelpCollapsed;
   elements.toggleRulesHelpButton.setAttribute("aria-expanded", String(rulesHelpExpanded));
-  elements.toggleRulesHelpButton.textContent = rulesHelpExpanded ? "Hide help" : "How rules work";
+  elements.toggleRulesHelpButton.textContent = rulesHelpExpanded ? "Hide help" : "Show help";
 }
 
 function escapeHtml(text) {
@@ -225,7 +225,7 @@ function renderNetworks() {
   elements.networksBody.innerHTML = "";
 
   if (rows.length === 0) {
-    elements.networksBody.innerHTML = '<tr><td colspan="7">No networks found.</td></tr>';
+    elements.networksBody.innerHTML = '<tr><td colspan="8">No networks found.</td></tr>';
   }
 
   rows.forEach((item) => {
@@ -236,6 +236,7 @@ function renderNetworks() {
       <td><code>${escapeHtml(item.bssid)}</code></td>
       <td>${item.seen_count}</td>
       <td>${item.strongest_rssi}</td>
+      <td>${item.channel ?? "-"}</td>
       <td>${frequencyBandLabel(item.frequency_mhz, item.channel)}</td>
       <td>${formatDate(item.last_seen)}</td>
     `;

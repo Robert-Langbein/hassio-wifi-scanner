@@ -263,6 +263,10 @@ pre {
   gap: 0.7rem;
 }
 
+.collapsible-content[hidden] {
+  display: none;
+}
+
 .help-box {
   border: 1px solid var(--border);
   border-radius: 0.65rem;
@@ -270,6 +274,10 @@ pre {
   padding: 0.75rem;
   font-size: 0.85rem;
   color: var(--text);
+}
+
+.help-box[hidden] {
+  display: none;
 }
 
 .help-box p {
