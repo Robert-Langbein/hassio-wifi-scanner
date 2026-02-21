@@ -79,12 +79,14 @@ WiFi presence tracking solution for Home Assistant with support for:
 
 If logs contain `Supervisor API error 403`, verify:
 
-1. Add-on is updated to at least `1.0.2` (`hassio_role: manager`).
+1. Add-on is updated to at least `1.0.3` (`hassio_role: manager`).
 2. Add-on repository has been reloaded in Home Assistant before update.
 3. Add-on was restarted after update.
 4. Configured `wifi_interface` exists on host (for example `wlan0`).
 
 At startup, the backend logs supervisor preflight checks for `/network/info` and `/network/interface/<iface>/info`, including a role requirement note for `/network/interface/<iface>/accesspoints`.
+
+If Ingress UI shows `404` in health/network sections while scan logs are successful, update to `1.0.3` or newer (Ingress API base path fix).
 
 ## Blueprint
 

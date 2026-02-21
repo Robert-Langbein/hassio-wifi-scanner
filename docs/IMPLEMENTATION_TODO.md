@@ -32,6 +32,7 @@
 - [x] Tag scanner 403 failures as `reason=supervisor_forbidden` in logs and health warnings.
 - [x] Tag invalid Supervisor accesspoint payload failures as `reason=supervisor_payload_invalid`.
 - [x] Fix ingress UI static asset paths to use ingress-safe relative URLs.
+- [x] Fix ingress UI API base path resolution so `/v1` calls stay inside ingress context.
 - [x] Harden static file MIME mapping for CSS/JS delivery.
 
 ## Home Assistant integration

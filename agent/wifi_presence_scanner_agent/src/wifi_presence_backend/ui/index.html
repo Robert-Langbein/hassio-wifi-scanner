@@ -209,7 +209,10 @@
     <div id="toast" class="toast hidden"></div>
 
     <script>
-      window.WPS_API_BASE = window.WPS_API_BASE || "/v1";
+      if (!window.WPS_API_BASE) {
+        const normalizedPath = window.location.pathname.replace(/\/+$/, "");
+        window.WPS_API_BASE = `${normalizedPath || ""}/v1`;
+      }
     </script>
     <script src="ui/app.js" type="module"></script>
   </body>
