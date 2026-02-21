@@ -1,7 +1,7 @@
 {
   "domain": "wifi_presence_scanner",
   "name": "WiFi Presence Scanner",
-  "version": "1.0.0",
+  "version": "1.0.6",
   "documentation": "https://github.com/Robert-Langbein/hassio-wifi-scanner",
   "issue_tracker": "https://github.com/Robert-Langbein/hassio-wifi-scanner/issues",
   "codeowners": [
