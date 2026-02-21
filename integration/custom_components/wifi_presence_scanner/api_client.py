@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from aiohttp import ClientError, ClientSession
@@ -55,8 +56,12 @@ class BackendClient:
                     body = await resp.text()
                     raise BackendClientError(f"Backend HTTP {resp.status}: {body}")
                 payload = await resp.json(content_type=None)
-        except ClientError as err:
+        except BackendClientError:
+            raise
+        except (ClientError, asyncio.TimeoutError) as err:
             raise BackendClientError(f"Backend request failed: {err}") from err
+        except ValueError as err:
+            raise BackendClientError(f"Backend response parse failed: {err}") from err
 
         if not isinstance(payload, dict):
             raise BackendClientError("Backend response is not an object")

@@ -21,6 +21,7 @@ from .const import (
     DOMAIN,
     MODE_AGENT,
     MODE_AUTO,
+    MODE_SUPERVISOR,
     PLATFORMS,
 )
 from .coordinator import WifiPresenceCoordinator
@@ -37,7 +38,7 @@ def _resolve_backend_candidates(entry: ConfigEntry) -> list[str]:
 
     if mode == MODE_AGENT:
         return [DEFAULT_BACKEND_URL_AGENT]
-    if mode == "supervisor":
+    if mode == MODE_SUPERVISOR:
         return [DEFAULT_BACKEND_URL_SUPERVISOR]
 
     return [DEFAULT_BACKEND_URL_SUPERVISOR, DEFAULT_BACKEND_URL_AGENT]
@@ -72,15 +73,21 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not hass.data[DOMAIN]["views_registered"]:
         async_register_views(hass)
-        async_register_built_in_panel(
-            hass,
-            component_name="iframe",
-            frontend_url_path=DOMAIN,
-            sidebar_title="WiFi Scanner",
-            sidebar_icon="mdi:wifi-marker",
-            config={"url": "/api/wifi_presence_scanner/panel"},
-            require_admin=False,
-        )
+        try:
+            async_register_built_in_panel(
+                hass,
+                component_name="iframe",
+                frontend_url_path=DOMAIN,
+                sidebar_title="WiFi Scanner",
+                sidebar_icon="mdi:wifi-marker",
+                config={"url": "/api/wifi_presence_scanner/panel"},
+                require_admin=False,
+            )
+        except Exception as err:  # pragma: no cover - depends on HA frontend internals
+            _LOGGER.warning(
+                "Panel registration failed, continuing without sidebar panel: %s",
+                err,
+            )
         hass.data[DOMAIN]["views_registered"] = True
 
     client = await _build_working_client(hass, entry)
@@ -124,7 +131,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     hass.data[DOMAIN]["entries"].pop(entry.entry_id, None)
     if not hass.data[DOMAIN]["entries"]:
-        async_remove_panel(hass, DOMAIN)
+        try:
+            async_remove_panel(hass, DOMAIN)
+        except Exception:  # pragma: no cover - panel may not exist
+            pass
         if hass.data[DOMAIN].get("services_registered"):
             hass.services.async_remove(DOMAIN, "force_scan")
             hass.services.async_remove(DOMAIN, "reload_rules")

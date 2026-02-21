@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import voluptuous as vol
@@ -32,6 +33,8 @@ from .const import (
     MODE_AUTO,
     MODE_SUPERVISOR,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def _build_schema(user_input: dict[str, Any] | None = None) -> vol.Schema:
@@ -88,6 +91,9 @@ class WifiPresenceConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 else:
                     await _validate_backend(self.hass, base_url=backend_url, api_key=api_key)
             except BackendClientError:
+                errors["base"] = "cannot_connect"
+            except Exception as err:  # pragma: no cover - defensive HA UI safeguard
+                _LOGGER.exception("Unexpected config flow error: %s", err)
                 errors["base"] = "cannot_connect"
             else:
                 await self.async_set_unique_id(f"{DOMAIN}:{backend_url}")
