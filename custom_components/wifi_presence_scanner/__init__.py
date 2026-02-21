@@ -72,7 +72,13 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not hass.data[DOMAIN]["views_registered"]:
-        async_register_views(hass)
+        try:
+            async_register_views(hass)
+        except Exception as err:  # pragma: no cover - depends on HA HTTP view lifecycle
+            _LOGGER.warning(
+                "HTTP view registration failed, continuing without custom panel views: %s",
+                err,
+            )
         try:
             async_register_built_in_panel(
                 hass,
