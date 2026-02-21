@@ -23,5 +23,5 @@ docker run -d \
   -e WIFI_INTERFACE='wlan0' \
   -e SCAN_INTERVAL_SEC='30' \
   -v wifi_presence_data:/var/lib/wifi_presence_scanner \
-  ghcr.io/robertlangbein/wifi-presence-scanner-agent:1.0.0
+  ghcr.io/Robert-Langbein/wifi-presence-scanner-agent:1.0.0
 ```
