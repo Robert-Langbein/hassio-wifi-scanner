@@ -42,7 +42,7 @@ class WifiPresencePanelView(HomeAssistantView):
 
 
 class WifiPresenceAssetView(HomeAssistantView):
-    url = "/api/wifi_presence_scanner/assets/{filename:.*}"
+    url = "/api/wifi_presence_scanner_static/{filename:.*}"
     name = "api:wifi_presence_scanner:asset"
     requires_auth = True
 

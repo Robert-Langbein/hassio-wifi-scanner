@@ -17,6 +17,7 @@ ingress_port: 8099
 panel_icon: mdi:wifi-marker
 panel_title: WiFi Scanner
 hassio_api: true
+hassio_role: manager
 homeassistant_api: true
 map:
   - addon_config:rw
