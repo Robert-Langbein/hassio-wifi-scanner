@@ -1,17 +1,17 @@
 :root {
-  --bg: #eff3f3;
-  --bg-grad-1: #f7fbfa;
-  --bg-grad-2: #ebf1ef;
+  --bg: #e8ebef;
+  --bg-grad-1: #f5f6f8;
+  --bg-grad-2: #dde1e7;
   --card: #ffffff;
-  --border: #c9d7d4;
-  --text: #102622;
-  --muted: #5c7670;
-  --accent: #006f50;
-  --accent-soft: #daf1ea;
+  --border: #c8ced8;
+  --text: #1b2430;
+  --muted: #5b6677;
+  --accent: #3f4e64;
+  --accent-soft: #eaedf2;
   --danger: #b3222d;
-  --ok: #0d8f63;
+  --ok: #197a48;
   --warn: #b07500;
-  --shadow: 0 14px 30px rgb(12 32 24 / 6%);
+  --shadow: 0 14px 28px rgb(16 24 40 / 7%);
 }
 
 * {
@@ -23,13 +23,14 @@ body {
   min-height: 100vh;
   font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
   color: var(--text);
-  background: radial-gradient(circle at top right, var(--bg-grad-1), var(--bg-grad-2));
+  background: linear-gradient(165deg, var(--bg-grad-1), var(--bg-grad-2));
 }
 
 .app-shell {
-  max-width: 1220px;
-  margin: 0 auto;
-  padding: 1rem;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 1rem 1.25rem 1.5rem;
   display: grid;
   gap: 1rem;
 }
@@ -117,6 +118,13 @@ h1 {
   flex-wrap: wrap;
 }
 
+.panel-tools {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
 .filter-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -153,6 +161,17 @@ button:hover {
 
 button.danger {
   background: var(--danger);
+}
+
+button.ghost {
+  background: var(--accent-soft);
+  color: #38485e;
+  border: 1px solid var(--border);
+}
+
+button.ghost:hover {
+  background: #dfe5ee;
+  filter: none;
 }
 
 .badge {
@@ -215,7 +234,7 @@ th[data-sort] {
 }
 
 tr:hover td {
-  background: #f8fbfa;
+  background: #f2f4f7;
 }
 
 .row-clickable {
@@ -233,10 +252,37 @@ pre {
   margin: 0;
   border: 1px solid var(--border);
   border-radius: 0.65rem;
-  background: #f8fbfa;
+  background: #f1f4f8;
   padding: 0.7rem;
   overflow: auto;
   font-size: 0.82rem;
+}
+
+.collapsible-content {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.help-box {
+  border: 1px solid var(--border);
+  border-radius: 0.65rem;
+  background: #f3f5f8;
+  padding: 0.75rem;
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+.help-box p {
+  margin: 0 0 0.45rem 0;
+}
+
+.help-box ul {
+  margin: 0 0 0.55rem 1.1rem;
+  padding: 0;
+}
+
+.help-box li {
+  margin: 0.2rem 0;
 }
 
 .drawer {
@@ -271,7 +317,7 @@ pre {
   left: 50%;
   transform: translateX(-50%);
   bottom: 14px;
-  background: #152a23;
+  background: #2f3d52;
   color: #fff;
   border-radius: 0.6rem;
   padding: 0.48rem 0.8rem;

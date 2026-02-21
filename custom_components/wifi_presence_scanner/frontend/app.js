@@ -1,4 +1,27 @@
 const API_BASE = window.WPS_API_BASE || "/v1";
+const STORAGE_SCAN_RUNS_COLLAPSED = "wps_scan_runs_collapsed";
+const STORAGE_HEALTH_COLLAPSED = "wps_health_collapsed";
+const STORAGE_RULES_HELP_COLLAPSED = "wps_rules_help_collapsed";
+
+function loadCollapsedPreference(storageKey, defaultValue) {
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (raw === null) {
+      return defaultValue;
+    }
+    return raw === "true";
+  } catch (_error) {
+    return defaultValue;
+  }
+}
+
+function saveCollapsedPreference(storageKey, collapsed) {
+  try {
+    window.localStorage.setItem(storageKey, String(collapsed));
+  } catch (_error) {
+    // Ignore storage write failures.
+  }
+}
 
 const state = {
   networks: {
@@ -15,6 +38,11 @@ const state = {
   },
   rules: [],
   health: null,
+  ui: {
+    scanRunsCollapsed: loadCollapsedPreference(STORAGE_SCAN_RUNS_COLLAPSED, true),
+    healthCollapsed: loadCollapsedPreference(STORAGE_HEALTH_COLLAPSED, true),
+    rulesHelpCollapsed: loadCollapsedPreference(STORAGE_RULES_HELP_COLLAPSED, true),
+  },
 };
 
 const elements = {
@@ -37,12 +65,18 @@ const elements = {
   runsPrevButton: document.getElementById("runsPrevButton"),
   runsNextButton: document.getElementById("runsNextButton"),
   runsPageLabel: document.getElementById("runsPageLabel"),
+  toggleRunsButton: document.getElementById("toggleRunsButton"),
+  runsContent: document.getElementById("runsContent"),
   kpiVisible: document.getElementById("kpiVisible"),
   kpiLastScan: document.getElementById("kpiLastScan"),
   kpiRules: document.getElementById("kpiRules"),
   kpiError: document.getElementById("kpiError"),
+  toggleHealthButton: document.getElementById("toggleHealthButton"),
+  healthContent: document.getElementById("healthContent"),
   ruleForm: document.getElementById("ruleForm"),
   rulesBody: document.getElementById("rulesBody"),
+  toggleRulesHelpButton: document.getElementById("toggleRulesHelpButton"),
+  rulesHelpContent: document.getElementById("rulesHelpContent"),
   runDrawer: document.getElementById("runDrawer"),
   runDrawerTitle: document.getElementById("runDrawerTitle"),
   runDrawerClose: document.getElementById("runDrawerClose"),
@@ -108,6 +142,48 @@ function formatDuration(ms) {
   return `${(ms / 1000).toFixed(2)} s`;
 }
 
+function frequencyBandLabel(frequencyMhz, channel) {
+  const frequency = Number(frequencyMhz || 0);
+  if (Number.isFinite(frequency) && frequency >= 2400 && frequency <= 2500) {
+    return "2.4 GHz";
+  }
+  if (Number.isFinite(frequency) && frequency >= 5000 && frequency <= 5900) {
+    return "5 GHz";
+  }
+  if (Number.isFinite(frequency) && frequency >= 5925 && frequency <= 7125) {
+    return "6 GHz";
+  }
+
+  const channelNumber = Number(channel || 0);
+  if (Number.isFinite(channelNumber) && channelNumber >= 1 && channelNumber <= 14) {
+    return "2.4 GHz";
+  }
+  if (Number.isFinite(channelNumber) && channelNumber >= 32 && channelNumber <= 177) {
+    return "5 GHz";
+  }
+  if (Number.isFinite(channelNumber) && channelNumber > 177 && channelNumber <= 233) {
+    return "6 GHz";
+  }
+  return "Unknown";
+}
+
+function applyCollapseState() {
+  const runsExpanded = !state.ui.scanRunsCollapsed;
+  elements.runsContent.hidden = state.ui.scanRunsCollapsed;
+  elements.toggleRunsButton.setAttribute("aria-expanded", String(runsExpanded));
+  elements.toggleRunsButton.textContent = runsExpanded ? "Hide" : "Show";
+
+  const healthExpanded = !state.ui.healthCollapsed;
+  elements.healthContent.hidden = state.ui.healthCollapsed;
+  elements.toggleHealthButton.setAttribute("aria-expanded", String(healthExpanded));
+  elements.toggleHealthButton.textContent = healthExpanded ? "Hide" : "Show";
+
+  const rulesHelpExpanded = !state.ui.rulesHelpCollapsed;
+  elements.rulesHelpContent.hidden = state.ui.rulesHelpCollapsed;
+  elements.toggleRulesHelpButton.setAttribute("aria-expanded", String(rulesHelpExpanded));
+  elements.toggleRulesHelpButton.textContent = rulesHelpExpanded ? "Hide help" : "How rules work";
+}
+
 function escapeHtml(text) {
   return String(text)
     .replaceAll("&", "&amp;")
@@ -149,7 +225,7 @@ function renderNetworks() {
   elements.networksBody.innerHTML = "";
 
   if (rows.length === 0) {
-    elements.networksBody.innerHTML = '<tr><td colspan="6">No networks found.</td></tr>';
+    elements.networksBody.innerHTML = '<tr><td colspan="7">No networks found.</td></tr>';
   }
 
   rows.forEach((item) => {
@@ -160,6 +236,7 @@ function renderNetworks() {
       <td><code>${escapeHtml(item.bssid)}</code></td>
       <td>${item.seen_count}</td>
       <td>${item.strongest_rssi}</td>
+      <td>${frequencyBandLabel(item.frequency_mhz, item.channel)}</td>
       <td>${formatDate(item.last_seen)}</td>
     `;
     elements.networksBody.appendChild(row);
@@ -308,7 +385,7 @@ async function openRunDetail(scanRunId) {
 
   const rows = Array.isArray(observations.items) ? observations.items : [];
   if (rows.length === 0) {
-    elements.runObservationsBody.innerHTML = '<tr><td colspan="5">No observations</td></tr>';
+    elements.runObservationsBody.innerHTML = '<tr><td colspan="6">No observations</td></tr>';
   }
 
   rows.forEach((item) => {
@@ -318,6 +395,7 @@ async function openRunDetail(scanRunId) {
       <td><code>${escapeHtml(item.bssid)}</code></td>
       <td>${item.rssi}</td>
       <td>${item.channel}</td>
+      <td>${frequencyBandLabel(item.frequency_mhz, item.channel)}</td>
       <td>${formatDate(item.seen_at)}</td>
     `;
     elements.runObservationsBody.appendChild(row);
@@ -341,6 +419,24 @@ async function refreshAll() {
 }
 
 function bindEvents() {
+  elements.toggleRunsButton.addEventListener("click", () => {
+    state.ui.scanRunsCollapsed = !state.ui.scanRunsCollapsed;
+    saveCollapsedPreference(STORAGE_SCAN_RUNS_COLLAPSED, state.ui.scanRunsCollapsed);
+    applyCollapseState();
+  });
+
+  elements.toggleHealthButton.addEventListener("click", () => {
+    state.ui.healthCollapsed = !state.ui.healthCollapsed;
+    saveCollapsedPreference(STORAGE_HEALTH_COLLAPSED, state.ui.healthCollapsed);
+    applyCollapseState();
+  });
+
+  elements.toggleRulesHelpButton.addEventListener("click", () => {
+    state.ui.rulesHelpCollapsed = !state.ui.rulesHelpCollapsed;
+    saveCollapsedPreference(STORAGE_RULES_HELP_COLLAPSED, state.ui.rulesHelpCollapsed);
+    applyCollapseState();
+  });
+
   elements.refreshButton.addEventListener("click", () => {
     refreshAll().catch((error) => showToast(error.message));
   });
@@ -433,6 +529,7 @@ function bindEvents() {
 }
 
 bindEvents();
+applyCollapseState();
 refreshAll().catch((error) => {
   showToast(error.message);
   elements.healthOutput.textContent = error.message;

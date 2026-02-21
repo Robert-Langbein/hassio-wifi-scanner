@@ -96,6 +96,7 @@
                 <th data-sort="bssid">BSSID</th>
                 <th data-sort="seen_count">Seen</th>
                 <th data-sort="strongest_rssi">Strongest RSSI</th>
+                <th data-sort="frequency_mhz">Band</th>
                 <th data-sort="last_seen">Last Seen</th>
               </tr>
             </thead>
@@ -107,34 +108,75 @@
       <section class="panel">
         <div class="panel-head">
           <h2>Scan Runs</h2>
-          <div class="pager">
-            <button id="runsPrevButton" type="button">Prev</button>
-            <span id="runsPageLabel">Page 1</span>
-            <button id="runsNextButton" type="button">Next</button>
+          <div class="panel-tools">
+            <div class="pager">
+              <button id="runsPrevButton" type="button">Prev</button>
+              <span id="runsPageLabel">Page 1</span>
+              <button id="runsNextButton" type="button">Next</button>
+            </div>
+            <button
+              id="toggleRunsButton"
+              type="button"
+              class="ghost"
+              aria-expanded="false"
+              aria-controls="runsContent"
+            >
+              Show
+            </button>
           </div>
         </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Status</th>
-                <th>Started</th>
-                <th>Duration</th>
-                <th>Seen</th>
-                <th>New</th>
-                <th>Gone</th>
-                <th>Rules</th>
-                <th>Trigger</th>
-              </tr>
-            </thead>
-            <tbody id="runsBody"></tbody>
-          </table>
+        <div id="runsContent" class="collapsible-content" hidden>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Status</th>
+                  <th>Started</th>
+                  <th>Duration</th>
+                  <th>Seen</th>
+                  <th>New</th>
+                  <th>Gone</th>
+                  <th>Rules</th>
+                  <th>Trigger</th>
+                </tr>
+              </thead>
+              <tbody id="runsBody"></tbody>
+            </table>
+          </div>
         </div>
       </section>
 
       <section class="panel">
-        <h2>Rules</h2>
+        <div class="panel-head">
+          <h2>Rules</h2>
+          <button
+            id="toggleRulesHelpButton"
+            type="button"
+            class="ghost"
+            aria-expanded="false"
+            aria-controls="rulesHelpContent"
+          >
+            How rules work
+          </button>
+        </div>
+        <div id="rulesHelpContent" class="help-box" hidden>
+          <p>Use rules to identify interesting WiFi sources and trigger automations.</p>
+          <ul>
+            <li><strong>Name:</strong> Friendly label shown in events and UI.</li>
+            <li><strong>SSID Regex:</strong> Pattern for SSID names, e.g. <code>^(DHL|UPS)</code>.</li>
+            <li><strong>BSSID Prefix CSV:</strong> Comma-separated vendor prefixes, e.g. <code>AA:BB:CC,11:22:33</code>.</li>
+            <li><strong>Min RSSI:</strong> Ignore weak detections below this signal level.</li>
+            <li><strong>Cooldown:</strong> Seconds to suppress repeated rule-match events.</li>
+          </ul>
+          <p>Examples:</p>
+          <ul>
+            <li><code>DHL van nearby</code>: regex <code>^DHL</code>, min RSSI <code>-80</code>, cooldown <code>120</code>.</li>
+            <li><code>Courier vendor prefix</code>: BSSID prefix <code>AA:BB:CC</code>, cooldown <code>90</code>.</li>
+            <li><code>Street hotspot</code>: regex <code>mobile|hotspot</code>, min RSSI <code>-70</code>.</li>
+          </ul>
+          <p>Tip: start strict, then relax regex/prefix filters if you miss detections.</p>
+        </div>
         <form id="ruleForm" class="rule-form">
           <label>
             Name
@@ -178,8 +220,21 @@
       </section>
 
       <section class="panel">
-        <h2>Health JSON</h2>
-        <pre id="healthOutput">Loading...</pre>
+        <div class="panel-head">
+          <h2>Health JSON</h2>
+          <button
+            id="toggleHealthButton"
+            type="button"
+            class="ghost"
+            aria-expanded="false"
+            aria-controls="healthContent"
+          >
+            Show
+          </button>
+        </div>
+        <div id="healthContent" class="collapsible-content" hidden>
+          <pre id="healthOutput">Loading...</pre>
+        </div>
       </section>
     </main>
 
@@ -198,6 +253,7 @@
               <th>BSSID</th>
               <th>RSSI</th>
               <th>Channel</th>
+              <th>Band</th>
               <th>Seen At</th>
             </tr>
           </thead>

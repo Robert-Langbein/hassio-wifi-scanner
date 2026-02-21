@@ -34,6 +34,9 @@
 - [x] Fix ingress UI static asset paths to use ingress-safe relative URLs.
 - [x] Fix ingress UI API base path resolution so `/v1` calls stay inside ingress context.
 - [x] Harden static file MIME mapping for CSS/JS delivery.
+- [x] Add frequency-band presentation in networks and observation tables.
+- [x] Add collapsible Scan Runs/Health sections with persisted UI state.
+- [x] Add Rules guidance panel in UI and switch visual theme to neutral gray full-width layout.
 
 ## Home Assistant integration
 - [x] Create custom integration domain `wifi_presence_scanner`.
