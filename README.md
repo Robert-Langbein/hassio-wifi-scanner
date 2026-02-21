@@ -95,3 +95,41 @@ If Ingress UI shows `404` in health/network sections while scan logs are success
 ## Blueprint
 
 Import `blueprints/automation/wifi_presence_scanner_notify.yaml` to create mobile notification automations from scanner events.
+
+## Use Rules In Automations
+
+After creating a rule, use Home Assistant automations with an `Event` trigger:
+
+1. Create a new automation.
+2. Add trigger type `Event`.
+3. Set event type to `wifi_presence_scanner_rule_matched` (rule-based trigger).
+4. Optionally add event-data filters, for example:
+   - `rule_name: DHL van nearby`
+   - `rule_id: 1`
+5. Add your action (mobile notification, light, script, etc.).
+
+Other useful event types:
+
+- `wifi_presence_scanner_wifi_discovered`
+- `wifi_presence_scanner_wifi_disappeared`
+- `wifi_presence_scanner_health_warning`
+
+Example automation (YAML):
+
+```yaml
+alias: Notify on DHL WiFi rule
+trigger:
+  - platform: event
+    event_type: wifi_presence_scanner_rule_matched
+    event_data:
+      rule_name: DHL van nearby
+action:
+  - service: notify.mobile_app_your_phone
+    data:
+      title: Paketdienst erkannt
+      message: >-
+        SSID={{ trigger.event.data.ssid }},
+        BSSID={{ trigger.event.data.bssid }},
+        RSSI={{ trigger.event.data.rssi }}
+mode: queued
+```

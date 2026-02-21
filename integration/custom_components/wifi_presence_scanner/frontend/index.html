@@ -163,12 +163,19 @@
         </div>
         <div id="rulesHelpContent" class="help-box" hidden>
           <p>Use rules to identify interesting WiFi sources and trigger automations.</p>
+          <p>To use a rule in Home Assistant, create an automation with trigger type <strong>Event</strong> and event type <code>wifi_presence_scanner_rule_matched</code>.</p>
           <ul>
             <li><strong>Name:</strong> Friendly label shown in events and UI.</li>
             <li><strong>SSID Regex:</strong> Pattern for SSID names, e.g. <code>^(DHL|UPS)</code>.</li>
             <li><strong>BSSID Prefix CSV:</strong> Comma-separated vendor prefixes, e.g. <code>AA:BB:CC,11:22:33</code>.</li>
             <li><strong>Min RSSI:</strong> Ignore weak detections below this signal level.</li>
             <li><strong>Cooldown:</strong> Seconds to suppress repeated rule-match events.</li>
+          </ul>
+          <p>Useful event types for automations:</p>
+          <ul>
+            <li><code>wifi_presence_scanner_rule_matched</code> (recommended for your rules)</li>
+            <li><code>wifi_presence_scanner_wifi_discovered</code></li>
+            <li><code>wifi_presence_scanner_wifi_disappeared</code></li>
           </ul>
           <p>Examples:</p>
           <ul>
