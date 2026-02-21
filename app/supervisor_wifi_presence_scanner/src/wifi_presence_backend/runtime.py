@@ -4,12 +4,13 @@ import logging
 import os
 import signal
 import threading
+from http import HTTPStatus
 from pathlib import Path
 
 from .api_server import ApiServer
 from .config import load_scan_config
 from .db import Database
-from .scanner import IWScanner, SupervisorApiScanner
+from .scanner import IWScanner, SupervisorApiError, SupervisorApiScanner
 from .service import EventPublisher, ScannerService
 
 _RUNTIME_LOGGER = logging.getLogger("wifi_presence_scanner.runtime")
@@ -46,6 +47,57 @@ def build_scanner(*, source: str):
     raise RuntimeError(f"Unsupported source: {source}")
 
 
+def _run_supervisor_preflight(*, scanner: SupervisorApiScanner, interface: str) -> None:
+    try:
+        network_info = scanner.get_network_info()
+        interfaces = network_info.get("interfaces")
+        interfaces_count = len(interfaces) if isinstance(interfaces, list) else 0
+        _RUNTIME_LOGGER.info(
+            "event=supervisor_preflight_ok endpoint=/network/info interface_count=%s",
+            interfaces_count,
+        )
+    except SupervisorApiError as exc:
+        if exc.status_code == HTTPStatus.FORBIDDEN:
+            _RUNTIME_LOGGER.error(
+                "event=supervisor_preflight_forbidden endpoint=/network/info interface=%s "
+                "reason=supervisor_forbidden hint=check_addon_permissions_and_restart message=%s",
+                interface,
+                str(exc),
+            )
+        else:
+            _RUNTIME_LOGGER.error(
+                "event=supervisor_preflight_failed endpoint=/network/info interface=%s message=%s",
+                interface,
+                str(exc),
+            )
+        return
+
+    try:
+        interface_info = scanner.get_interface_info(interface=interface)
+        if_name = str(interface_info.get("interface") or interface)
+        _RUNTIME_LOGGER.info(
+            "event=supervisor_preflight_ok endpoint=/network/interface/%s/info interface=%s",
+            interface,
+            if_name,
+        )
+    except SupervisorApiError as exc:
+        if exc.status_code == HTTPStatus.FORBIDDEN:
+            _RUNTIME_LOGGER.error(
+                "event=supervisor_preflight_forbidden endpoint=/network/interface/%s/info interface=%s "
+                "reason=supervisor_forbidden hint=check_addon_permissions_and_restart message=%s",
+                interface,
+                interface,
+                str(exc),
+            )
+            return
+        _RUNTIME_LOGGER.error(
+            "event=supervisor_preflight_failed endpoint=/network/interface/%s/info interface=%s message=%s",
+            interface,
+            interface,
+            str(exc),
+        )
+
+
 def run_backend(*, source: str) -> None:
     configured_log_level = configure_logging()
     _RUNTIME_LOGGER.info("event=backend_start source=%s log_level=%s", source, configured_log_level)
@@ -59,6 +111,8 @@ def run_backend(*, source: str) -> None:
 
     db = Database(db_path=db_path)
     scanner = build_scanner(source=source)
+    if source == "supervisor" and isinstance(scanner, SupervisorApiScanner):
+        _run_supervisor_preflight(scanner=scanner, interface=config.interface)
     publisher = EventPublisher(
         db=db,
         ha_api_url=os.getenv("HA_API_URL"),

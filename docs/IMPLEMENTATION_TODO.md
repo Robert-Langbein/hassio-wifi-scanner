@@ -27,6 +27,10 @@
 - [x] Add configurable runtime log level (`error|warning|info|debug`) in add-on options.
 - [x] Emit structured scan summary lines for completed/skipped/failed runs.
 - [x] Keep HTTP access logs disabled by default and enable in debug mode.
+- [x] Add supervisor startup preflight diagnostics for `/network/info` and interface permissions.
+- [x] Tag scanner 403 failures as `reason=supervisor_forbidden` in logs and health warnings.
+- [x] Fix ingress UI static asset paths to use ingress-safe relative URLs.
+- [x] Harden static file MIME mapping for CSS/JS delivery.
 
 ## Home Assistant integration
 - [x] Create custom integration domain `wifi_presence_scanner`.

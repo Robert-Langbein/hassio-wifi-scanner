@@ -10,8 +10,9 @@
    - `scan_interval_sec` (default `30`)
    - `quiet_windows_json` (JSON array, one window per weekday)
 4. Start add-on.
-5. Install custom integration (`custom_components/wifi_presence_scanner`) via HACS or manual copy.
-6. Add integration from UI and choose mode `auto`.
+5. If update does not appear, use "Reload" on the add-on repository and then upgrade the add-on.
+6. Install custom integration (`custom_components/wifi_presence_scanner`) via HACS or manual copy.
+7. Add integration from UI and choose mode `auto`.
 
 ## Option B: Home Assistant Core / Container
 
@@ -40,3 +41,14 @@
 The add-on prints structured scan lines in Supervisor logs. Example:
 
 `ts=2026-02-21T17:10:00+0000 level=INFO logger=wifi_presence_scanner.scan event=scan_completed run_id=154 interface=wlan0 seen=19 new=2 disappeared=1 rules=1 duration_ms=463 status=ok trigger=scheduled`
+
+## Troubleshooting Supervisor 403
+
+If scan logs show `Supervisor API error 403`:
+
+1. Ensure add-on version is `1.0.1` or newer.
+2. Reload add-on repository and upgrade to newest version.
+3. Restart the add-on after upgrade.
+4. Verify `wifi_interface` points to a valid WiFi interface (for example `wlan0`).
+
+Startup logs include preflight checks for `/network/info` and `/network/interface/<iface>/info` to clarify permission failures.

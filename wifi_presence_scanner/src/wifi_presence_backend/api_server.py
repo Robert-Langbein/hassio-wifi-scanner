@@ -75,6 +75,11 @@ class ApiServer:
             def _write_file(self, file_path: Path) -> None:
                 data = file_path.read_bytes()
                 mime, _ = mimetypes.guess_type(str(file_path))
+                suffix = file_path.suffix.lower()
+                if suffix == ".css":
+                    mime = "text/css"
+                elif suffix == ".js":
+                    mime = "application/javascript"
                 self.send_response(HTTPStatus.OK)
                 self.send_header("Content-Type", mime or "application/octet-stream")
                 self.send_header("Content-Length", str(len(data)))

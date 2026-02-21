@@ -38,9 +38,10 @@ WiFi presence tracking solution for Home Assistant with support for:
 ### 1. HA OS / Supervised
 
 1. Build/install add-on from `app/supervisor_wifi_presence_scanner`.
-2. Start add-on.
-3. Install integration from `custom_components/wifi_presence_scanner` (or via HACS from this repo).
-4. In integration config flow choose mode `auto` (default).
+2. If you update from HACS/add-on repository, reload the add-on repository in Home Assistant so the new add-on version is detected.
+3. Start add-on.
+4. Install integration from `custom_components/wifi_presence_scanner` (or via HACS from this repo).
+5. In integration config flow choose mode `auto` (default).
 
 ### 2. HA Core / Container
 
@@ -71,6 +72,19 @@ WiFi presence tracking solution for Home Assistant with support for:
 - Prefer `HTTP_HOST=127.0.0.1` for local-only exposure.
 - Use private networks/VPN if remote connectivity is needed.
 - Optional privacy mode hashes BSSID values before storage.
+
+## Troubleshooting
+
+### Supervisor 403 on scans
+
+If logs contain `Supervisor API error 403`, verify:
+
+1. Add-on is updated to at least `1.0.1` (`hassio_role: default`).
+2. Add-on repository has been reloaded in Home Assistant before update.
+3. Add-on was restarted after update.
+4. Configured `wifi_interface` exists on host (for example `wlan0`).
+
+At startup, the backend now logs supervisor preflight checks for `/network/info` and `/network/interface/<iface>/info` to make permission issues explicit.
 
 ## Blueprint
 

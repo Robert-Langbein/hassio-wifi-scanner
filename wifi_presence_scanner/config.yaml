@@ -1,7 +1,7 @@
 name: WiFi Presence Scanner
 slug: wifi_presence_scanner
 description: Continuously scans nearby WiFi networks and emits Home Assistant automation events.
-version: 1.0.0
+version: 1.0.1
 url: https://github.com/robertlangbein/hassio-wifi-scanner
 arch:
   - aarch64
@@ -17,7 +17,7 @@ ingress_port: 8099
 panel_icon: mdi:wifi-marker
 panel_title: WiFi Scanner
 hassio_api: true
-hassio_role: manager
+hassio_role: default
 homeassistant_api: true
 map:
   - addon_config:rw

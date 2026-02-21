@@ -268,6 +268,10 @@ class ScannerService:
                 }
             except Exception as exc:
                 err = str(exc)
+                reason = "scan_failed"
+                status_code = getattr(exc, "status_code", None)
+                if status_code == 403 or "Supervisor API error 403" in err:
+                    reason = "supervisor_forbidden"
                 duration_ms = int((time.monotonic() - started_monotonic) * 1000)
                 self._db.finish_scan_run(
                     scan_run_id=scan_run_id,
@@ -283,12 +287,13 @@ class ScannerService:
 
                 _SCAN_LOGGER.error(
                     "ts=%s level=error event=scan_failed run_id=%s interface=%s seen=0 new=0 disappeared=0 "
-                    "rules=0 duration_ms=%s status=error trigger=%s error=%s",
+                    "rules=0 duration_ms=%s status=error trigger=%s reason=%s error=%s",
                     self._last_scan_finished_at,
                     scan_run_id,
                     self._config.interface,
                     duration_ms,
                     trigger,
+                    reason,
                     err,
                 )
 
@@ -297,7 +302,7 @@ class ScannerService:
                     payload={
                         "scanner_source": self._config.source,
                         "interface": self._config.interface,
-                        "reason": "scan_failed",
+                        "reason": reason,
                         "error": err,
                         "at": self._last_scan_finished_at,
                         "scan_run_id": scan_run_id,

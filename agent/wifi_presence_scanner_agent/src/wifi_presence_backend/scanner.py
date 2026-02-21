@@ -23,6 +23,12 @@ class ScanRawNetwork:
     oui_vendor: str | None
 
 
+class SupervisorApiError(RuntimeError):
+    def __init__(self, *, status_code: int | None, message: str) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
 class ScanSource:
     def scan(self, *, interface: str) -> list[ScanRawNetwork]:
         raise NotImplementedError
@@ -44,8 +50,8 @@ class SupervisorApiScanner(ScanSource):
         self._supervisor_token = supervisor_token
         self._timeout_sec = timeout_sec
 
-    def scan(self, *, interface: str) -> list[ScanRawNetwork]:
-        url = f"{self._base_url}/network/interface/{interface}/accesspoints"
+    def _request(self, *, path: str) -> dict[str, object] | list[object]:
+        url = f"{self._base_url}{path}"
         req = urllib.request.Request(
             url,
             headers={
@@ -59,13 +65,58 @@ class SupervisorApiScanner(ScanSource):
                 payload = json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="ignore")
-            raise RuntimeError(f"Supervisor API error {exc.code}: {body}") from exc
+            raise SupervisorApiError(
+                status_code=exc.code,
+                message=f"Supervisor API error {exc.code}: {body}",
+            ) from exc
         except urllib.error.URLError as exc:
-            raise RuntimeError(f"Supervisor API unreachable: {exc.reason}") from exc
+            raise SupervisorApiError(
+                status_code=None,
+                message=f"Supervisor API unreachable: {exc.reason}",
+            ) from exc
+        if not isinstance(payload, dict):
+            raise SupervisorApiError(
+                status_code=None,
+                message="Supervisor API returned invalid payload",
+            )
+        data = payload.get("data")
+        if data is None:
+            raise SupervisorApiError(
+                status_code=None,
+                message="Supervisor API returned payload without data",
+            )
+        if not isinstance(data, (dict, list)):
+            raise SupervisorApiError(
+                status_code=None,
+                message="Supervisor API returned invalid data payload",
+            )
+        return data
 
-        data = payload.get("data") if isinstance(payload, dict) else None
+    def get_network_info(self) -> dict[str, object]:
+        data = self._request(path="/network/info")
+        if not isinstance(data, dict):
+            raise SupervisorApiError(
+                status_code=None,
+                message="Supervisor API returned invalid network info payload",
+            )
+        return data
+
+    def get_interface_info(self, *, interface: str) -> dict[str, object]:
+        data = self._request(path=f"/network/interface/{interface}/info")
+        if not isinstance(data, dict):
+            raise SupervisorApiError(
+                status_code=None,
+                message="Supervisor API returned invalid interface payload",
+            )
+        return data
+
+    def scan(self, *, interface: str) -> list[ScanRawNetwork]:
+        data = self._request(path=f"/network/interface/{interface}/accesspoints")
         if not isinstance(data, list):
-            raise RuntimeError("Supervisor API returned invalid payload")
+            raise SupervisorApiError(
+                status_code=None,
+                message="Supervisor API returned invalid accesspoints payload",
+            )
 
         results: list[ScanRawNetwork] = []
         for entry in data:
