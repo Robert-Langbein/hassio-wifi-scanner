@@ -22,11 +22,12 @@ from .constants import (
 )
 from .db import Database
 from .rules import RuleEngine
-from .scanner import ScanSource, to_observation
+from .scanner import BSSID_RE, ScanSource, to_observation
 from .types import NetworkObservation, ScanConfig
 
 _SCAN_LOGGER = logging.getLogger("wifi_presence_scanner.scan")
 _RUNTIME_LOGGER = logging.getLogger("wifi_presence_scanner.runtime")
+DEFAULT_NOVEL_WINDOW_HOURS = 24
 
 
 def _utc_now() -> datetime:
@@ -497,6 +498,50 @@ class ScannerService:
             offset=offset,
         )
         return {"items": items, "limit": limit, "offset": offset}
+
+    def list_novel_networks(self, *, params: dict[str, str]) -> dict[str, object]:
+        window_hours = int(params.get("window_hours", str(DEFAULT_NOVEL_WINDOW_HOURS)))
+        if window_hours < 1 or window_hours > 168:
+            raise ValueError("'window_hours' must be between 1 and 168")
+        query = params.get("query")
+        limit = max(1, min(int(params.get("limit", "50")), 1000))
+        offset = max(0, int(params.get("offset", "0")))
+        items = self._db.list_novel_networks(
+            window_hours=window_hours,
+            query=query,
+            limit=limit,
+            offset=offset,
+        )
+        return {
+            "items": items,
+            "window_hours": window_hours,
+            "query": query or "",
+            "limit": limit,
+            "offset": offset,
+        }
+
+    def clear_novel_networks(self, *, payload: dict[str, object]) -> dict[str, object]:
+        clear_all_raw = payload.get("clear_all", False)
+        clear_all = clear_all_raw is True or str(clear_all_raw).strip().lower() in {"1", "true", "yes"}
+        if clear_all:
+            window_hours = int(payload.get("window_hours", DEFAULT_NOVEL_WINDOW_HOURS))
+            if window_hours < 1 or window_hours > 168:
+                raise ValueError("'window_hours' must be between 1 and 168")
+            query_raw = payload.get("query")
+            query = str(query_raw).strip() if query_raw else None
+            cleared = self._db.clear_novel_networks(window_hours=window_hours, query=query)
+            return {
+                "cleared": cleared,
+                "mode": "all",
+                "window_hours": window_hours,
+                "query": query or "",
+            }
+
+        bssid = str(payload.get("bssid", "")).strip().upper()
+        if not BSSID_RE.match(bssid):
+            raise ValueError("'bssid' is required and must be a valid BSSID")
+        self._db.clear_novel_network(bssid=bssid)
+        return {"cleared": 1, "mode": "single", "bssid": bssid}
 
     def list_rules(self) -> dict[str, object]:
         rules = [asdict(rule) for rule in self._db.list_rules()]

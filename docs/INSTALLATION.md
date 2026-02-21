@@ -46,11 +46,21 @@ The add-on prints structured scan lines in Supervisor logs. Example:
 
 If scan logs show `Supervisor API error 403`:
 
-1. Ensure add-on version is `1.0.6` or newer (`hassio_role: manager`).
+1. Ensure add-on version is `1.0.7` or newer (`hassio_role: manager`).
 2. Reload add-on repository and upgrade to newest version.
 3. Restart the add-on after upgrade.
 4. Verify `wifi_interface` points to a valid WiFi interface (for example `wlan0`).
 
 Startup logs include preflight checks for `/network/info` and `/network/interface/<iface>/info` plus an accesspoint role note for `/network/interface/<iface>/accesspoints`.
 
-If scans are visible in logs but Ingress UI still shows `404`, update to `1.0.6` or newer.
+If scans are visible in logs but Ingress UI still shows `404`, update to `1.0.7` or newer.
+
+## One-time networks card
+
+The UI includes a `One-time Networks` card:
+
+1. Set `Window (hours)` (default `24`).
+2. Use `Clear` to hide one BSSID from this list.
+3. Use `Clear All` to hide all currently matching one-time entries.
+
+Clears are persisted in backend DB and remain hidden across restarts.

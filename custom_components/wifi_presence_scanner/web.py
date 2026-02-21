@@ -76,6 +76,11 @@ class WifiPresenceProxyView(HomeAssistantView):
             elif method == "GET" and suffix.startswith("networks/") and suffix.endswith("/sessions"):
                 bssid = suffix.removeprefix("networks/").removesuffix("/sessions")
                 data = await client.network_sessions(bssid=bssid)
+            elif method == "GET" and suffix == "novel-networks":
+                params = {k: v for k, v in request.query.items()}
+                data = await client.novel_networks(params=params)
+            elif method == "POST" and suffix == "novel-networks/clear":
+                data = await client.clear_novel_network(payload=payload or {})
             elif method == "GET" and suffix == "scan-runs":
                 params = {k: v for k, v in request.query.items()}
                 data = await client.scan_runs(params=params)

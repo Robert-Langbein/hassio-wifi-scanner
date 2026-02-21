@@ -150,14 +150,21 @@ class Database:
                     created_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS novel_network_clears (
+                    bssid TEXT PRIMARY KEY,
+                    cleared_at TEXT NOT NULL
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_network_observations_seen_at ON network_observations(seen_at);
                 CREATE INDEX IF NOT EXISTS idx_network_observations_bssid ON network_observations(bssid);
                 CREATE INDEX IF NOT EXISTS idx_presence_sessions_last_seen ON presence_sessions(last_seen);
+                CREATE INDEX IF NOT EXISTS idx_presence_sessions_bssid_first_seen ON presence_sessions(bssid, first_seen);
                 CREATE INDEX IF NOT EXISTS idx_rule_matches_matched_at ON rule_matches(matched_at);
                 CREATE INDEX IF NOT EXISTS idx_rule_matches_rule_id ON rule_matches(rule_id);
                 CREATE INDEX IF NOT EXISTS idx_emitted_events_created_at ON emitted_events(created_at);
                 CREATE INDEX IF NOT EXISTS idx_scan_runs_started_at ON scan_runs(started_at);
                 CREATE INDEX IF NOT EXISTS idx_scan_runs_status ON scan_runs(status);
+                CREATE INDEX IF NOT EXISTS idx_novel_network_clears_cleared_at ON novel_network_clears(cleared_at);
                 """
             )
 
@@ -644,6 +651,151 @@ class Database:
         with self._tx() as conn:
             rows = conn.execute(sql, tuple(args)).fetchall()
             return [dict(row) for row in rows]
+
+    def list_novel_networks(
+        self,
+        *,
+        window_hours: int,
+        query: str | None,
+        limit: int,
+        offset: int,
+    ) -> list[dict[str, Any]]:
+        window_days = window_hours / 24.0
+        where_parts: list[str] = [
+            "sc.sessions_in_window = 1",
+            "julianday('now') >= julianday(sc.first_seen_global) + ?",
+            "nc.bssid IS NULL",
+        ]
+        args: list[Any] = [window_days, window_days]
+        if query:
+            like = f"%{query}%"
+            where_parts.append("(coalesce(lo.ssid, '') LIKE ? OR sc.bssid LIKE ? OR coalesce(lo.oui_vendor, '') LIKE ?)")
+            args.extend([like, like, like])
+
+        where_clause = "WHERE " + " AND ".join(where_parts)
+        sql = f"""
+            WITH first_sessions AS (
+                SELECT
+                    bssid,
+                    MIN(first_seen) AS first_seen_global
+                FROM presence_sessions
+                GROUP BY bssid
+            ),
+            session_counts AS (
+                SELECT
+                    fs.bssid,
+                    fs.first_seen_global,
+                    COUNT(ps.id) AS sessions_in_window
+                FROM first_sessions fs
+                JOIN presence_sessions ps
+                    ON ps.bssid = fs.bssid
+                WHERE julianday(ps.first_seen) <= julianday(fs.first_seen_global) + ?
+                GROUP BY fs.bssid, fs.first_seen_global
+            ),
+            latest_observation AS (
+                SELECT
+                    o.bssid,
+                    MAX(o.ssid) AS ssid,
+                    MAX(o.oui_vendor) AS oui_vendor,
+                    MAX(o.seen_at) AS last_seen,
+                    MAX(o.rssi) AS strongest_rssi,
+                    (SELECT o2.channel FROM network_observations o2 WHERE o2.bssid = o.bssid ORDER BY o2.seen_at DESC LIMIT 1) AS channel,
+                    (SELECT o2.frequency_mhz FROM network_observations o2 WHERE o2.bssid = o.bssid ORDER BY o2.seen_at DESC LIMIT 1) AS frequency_mhz
+                FROM network_observations o
+                GROUP BY o.bssid
+            )
+            SELECT
+                sc.bssid,
+                coalesce(lo.ssid, '') AS ssid,
+                lo.oui_vendor,
+                sc.first_seen_global AS first_seen,
+                lo.last_seen,
+                lo.strongest_rssi,
+                lo.channel,
+                lo.frequency_mhz,
+                lo.last_seen AS seen_at,
+                EXISTS (SELECT 1 FROM active_networks a WHERE a.bssid = sc.bssid) AS currently_visible
+            FROM session_counts sc
+            LEFT JOIN latest_observation lo ON lo.bssid = sc.bssid
+            LEFT JOIN novel_network_clears nc ON nc.bssid = sc.bssid
+            {where_clause}
+            ORDER BY sc.first_seen_global DESC
+            LIMIT ? OFFSET ?
+        """
+        args.extend([limit, offset])
+        with self._tx() as conn:
+            rows = conn.execute(sql, tuple(args)).fetchall()
+            return [dict(row) for row in rows]
+
+    def clear_novel_network(self, *, bssid: str) -> bool:
+        with self._tx() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO novel_network_clears(bssid, cleared_at)
+                VALUES(?, ?)
+                """,
+                (bssid, _utc_now_iso()),
+            )
+            return True
+
+    def clear_novel_networks(self, *, window_hours: int, query: str | None) -> int:
+        window_days = window_hours / 24.0
+        where_parts: list[str] = [
+            "sc.sessions_in_window = 1",
+            "julianday('now') >= julianday(sc.first_seen_global) + ?",
+            "nc.bssid IS NULL",
+        ]
+        args: list[Any] = [window_days, window_days]
+        if query:
+            like = f"%{query}%"
+            where_parts.append("(coalesce(lo.ssid, '') LIKE ? OR sc.bssid LIKE ? OR coalesce(lo.oui_vendor, '') LIKE ?)")
+            args.extend([like, like, like])
+
+        where_clause = "WHERE " + " AND ".join(where_parts)
+        sql = f"""
+            WITH first_sessions AS (
+                SELECT
+                    bssid,
+                    MIN(first_seen) AS first_seen_global
+                FROM presence_sessions
+                GROUP BY bssid
+            ),
+            session_counts AS (
+                SELECT
+                    fs.bssid,
+                    fs.first_seen_global,
+                    COUNT(ps.id) AS sessions_in_window
+                FROM first_sessions fs
+                JOIN presence_sessions ps
+                    ON ps.bssid = fs.bssid
+                WHERE julianday(ps.first_seen) <= julianday(fs.first_seen_global) + ?
+                GROUP BY fs.bssid, fs.first_seen_global
+            ),
+            latest_observation AS (
+                SELECT
+                    o.bssid,
+                    MAX(o.ssid) AS ssid,
+                    MAX(o.oui_vendor) AS oui_vendor
+                FROM network_observations o
+                GROUP BY o.bssid
+            ),
+            candidates AS (
+                SELECT sc.bssid
+                FROM session_counts sc
+                LEFT JOIN latest_observation lo ON lo.bssid = sc.bssid
+                LEFT JOIN novel_network_clears nc ON nc.bssid = sc.bssid
+                {where_clause}
+            )
+            INSERT OR REPLACE INTO novel_network_clears(bssid, cleared_at)
+            SELECT c.bssid, ?
+            FROM candidates c
+        """
+        now = _utc_now_iso()
+        args.append(now)
+        with self._tx() as conn:
+            before = conn.total_changes
+            conn.execute(sql, tuple(args))
+            return int(conn.total_changes - before)
 
     def get_network_sessions(self, *, bssid: str) -> list[dict[str, Any]]:
         with self._tx() as conn:

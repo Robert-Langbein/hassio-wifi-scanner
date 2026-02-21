@@ -87,6 +87,12 @@ class BackendClient:
     async def network_sessions(self, *, bssid: str) -> dict[str, Any]:
         return await self._request(method="GET", path=f"/v1/networks/{bssid}/sessions")
 
+    async def novel_networks(self, *, params: dict[str, Any]) -> dict[str, Any]:
+        return await self._request(method="GET", path="/v1/novel-networks", params=params)
+
+    async def clear_novel_network(self, *, payload: dict[str, Any]) -> dict[str, Any]:
+        return await self._request(method="POST", path="/v1/novel-networks/clear", json_payload=payload)
+
     async def scan_runs(self, *, params: dict[str, Any]) -> dict[str, Any]:
         return await self._request(method="GET", path="/v1/scan-runs", params=params)
 

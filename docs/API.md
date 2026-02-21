@@ -26,6 +26,22 @@ Query params:
 ### `GET /v1/networks/{bssid}/sessions`
 Returns tracked presence sessions for one BSSID.
 
+### `GET /v1/novel-networks`
+Query params:
+
+- `window_hours` (1..168, default `24`)
+- `query`
+- `limit`
+- `offset`
+
+Returns one-time network candidates: BSSIDs with only one session inside the configured time window after first sighting.
+
+### `POST /v1/novel-networks/clear`
+Payload options:
+
+- `{ "bssid": "AA:BB:CC:DD:EE:FF" }` clears one entry.
+- `{ "clear_all": true, "window_hours": 24, "query": "" }` clears the currently matching set.
+
 ### `GET /v1/scan-runs`
 Query params:
 

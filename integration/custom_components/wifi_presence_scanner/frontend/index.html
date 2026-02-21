@@ -108,6 +108,48 @@
 
       <section class="panel">
         <div class="panel-head">
+          <h2>One-time Networks</h2>
+          <div class="panel-tools">
+            <button id="novelRefreshButton" type="button" class="ghost">Refresh</button>
+            <button id="novelClearAllButton" type="button" class="danger">Clear All</button>
+          </div>
+        </div>
+        <div class="filter-grid inline-controls">
+          <label>
+            Window (hours)
+            <input id="novelWindowInput" type="number" min="1" max="168" step="1" value="24" />
+          </label>
+          <label>
+            Search
+            <input id="novelQueryInput" placeholder="SSID, BSSID, vendor" />
+          </label>
+        </div>
+        <p class="muted-note">
+          A network is listed when it appears once and does not start another session within the configured window.
+          Cleared items stay hidden until database reset.
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>SSID</th>
+                <th>BSSID</th>
+                <th>First Seen</th>
+                <th>Last Seen</th>
+                <th>Max RSSI</th>
+                <th>Channel</th>
+                <th>Band</th>
+                <th>Visible</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="novelBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
           <h2>Scan Runs</h2>
           <div class="panel-tools">
             <div class="pager">

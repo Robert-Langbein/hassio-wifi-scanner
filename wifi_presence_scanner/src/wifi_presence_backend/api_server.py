@@ -133,6 +133,9 @@ class ApiServer:
                             payload=service.get_network_sessions(bssid=bssid),
                         )
                         return
+                    if parsed.path == "/v1/novel-networks":
+                        self._write_json(status=HTTPStatus.OK, payload=service.list_novel_networks(params=query))
+                        return
                     if parsed.path == "/v1/rules":
                         self._write_json(status=HTTPStatus.OK, payload=service.list_rules())
                         return
@@ -193,6 +196,10 @@ class ApiServer:
                         return
                     if parsed.path == "/v1/history/purge":
                         self._write_json(status=HTTPStatus.OK, payload=service.purge_history())
+                        return
+                    if parsed.path == "/v1/novel-networks/clear":
+                        payload = self._read_json()
+                        self._write_json(status=HTTPStatus.OK, payload=service.clear_novel_networks(payload=payload))
                         return
                     self._write_json(status=HTTPStatus.NOT_FOUND, payload={"error": "not_found"})
                 except ValueError as exc:

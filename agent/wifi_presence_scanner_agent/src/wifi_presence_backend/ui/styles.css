@@ -131,6 +131,16 @@ h1 {
   gap: 0.7rem;
 }
 
+.inline-controls {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.muted-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
 label {
   display: grid;
   gap: 0.28rem;
@@ -239,6 +249,10 @@ tr:hover td {
 
 .row-clickable {
   cursor: pointer;
+}
+
+.table-action-cell {
+  white-space: nowrap;
 }
 
 .rule-form {

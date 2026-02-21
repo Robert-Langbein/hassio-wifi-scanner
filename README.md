@@ -15,6 +15,7 @@ WiFi presence tracking solution for Home Assistant with support for:
 - Search/filter list of scanned WiFi networks
 - Frequency-band visibility (`2.4/5/6 GHz`) in network and observation tables
 - Networks table shows `Max RSSI` (highest observed value in the selected history window)
+- One-time networks card with configurable `n`-hour window and manual clear (persistent)
 - Short-repeating network filter for courier-like patterns
 - Scan run history with detail drilldown (runs + observations)
 - Collapsible `Scan Runs` and `Health JSON` sections with per-browser state persistence
@@ -58,6 +59,8 @@ WiFi presence tracking solution for Home Assistant with support for:
 - `GET /v1/health`
 - `GET /v1/networks`
 - `GET /v1/networks/{bssid}/sessions`
+- `GET /v1/novel-networks`
+- `POST /v1/novel-networks/clear`
 - `GET /v1/rules`
 - `POST /v1/rules`
 - `PATCH /v1/rules/{id}`
@@ -83,14 +86,23 @@ WiFi presence tracking solution for Home Assistant with support for:
 
 If logs contain `Supervisor API error 403`, verify:
 
-1. Add-on is updated to at least `1.0.6` (`hassio_role: manager`).
+1. Add-on is updated to at least `1.0.7` (`hassio_role: manager`).
 2. Add-on repository has been reloaded in Home Assistant before update.
 3. Add-on was restarted after update.
 4. Configured `wifi_interface` exists on host (for example `wlan0`).
 
 At startup, the backend logs supervisor preflight checks for `/network/info` and `/network/interface/<iface>/info`, including a role requirement note for `/network/interface/<iface>/accesspoints`.
 
-If Ingress UI shows `404` in health/network sections while scan logs are successful, update to `1.0.6` or newer.
+If Ingress UI shows `404` in health/network sections while scan logs are successful, update to `1.0.7` or newer.
+
+## One-time Networks Card
+
+The `One-time Networks` card highlights networks that only formed one session in the first `n` hours after they were first seen.
+
+- `Window (hours)` is configurable (default `24`) and stored per browser.
+- `Clear` removes a single BSSID from this list.
+- `Clear All` removes all currently listed rows for the active window/query.
+- Clears are stored in backend SQLite and survive restarts.
 
 ## Blueprint
 

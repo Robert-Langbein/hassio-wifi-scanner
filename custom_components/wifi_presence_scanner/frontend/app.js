@@ -2,6 +2,7 @@ const API_BASE = window.WPS_API_BASE || "/v1";
 const STORAGE_SCAN_RUNS_COLLAPSED = "wps_scan_runs_collapsed";
 const STORAGE_HEALTH_COLLAPSED = "wps_health_collapsed";
 const STORAGE_RULES_HELP_COLLAPSED = "wps_rules_help_collapsed";
+const STORAGE_NOVEL_WINDOW_HOURS = "wps_novel_window_hours";
 
 function loadCollapsedPreference(storageKey, defaultValue) {
   try {
@@ -23,6 +24,22 @@ function saveCollapsedPreference(storageKey, collapsed) {
   }
 }
 
+function loadIntegerPreference(storageKey, defaultValue, minValue, maxValue) {
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (raw === null) {
+      return defaultValue;
+    }
+    const value = Math.trunc(Number(raw));
+    if (!Number.isFinite(value)) {
+      return defaultValue;
+    }
+    return Math.min(Math.max(value, minValue), maxValue);
+  } catch (_error) {
+    return defaultValue;
+  }
+}
+
 const state = {
   networks: {
     limit: 100,
@@ -34,6 +51,13 @@ const state = {
   runs: {
     limit: 50,
     offset: 0,
+    items: [],
+  },
+  novel: {
+    limit: 100,
+    offset: 0,
+    windowHours: loadIntegerPreference(STORAGE_NOVEL_WINDOW_HOURS, 24, 1, 168),
+    query: "",
     items: [],
   },
   rules: [],
@@ -57,6 +81,11 @@ const elements = {
   fromInput: document.getElementById("fromInput"),
   toInput: document.getElementById("toInput"),
   scanStatusInput: document.getElementById("scanStatusInput"),
+  novelWindowInput: document.getElementById("novelWindowInput"),
+  novelQueryInput: document.getElementById("novelQueryInput"),
+  novelRefreshButton: document.getElementById("novelRefreshButton"),
+  novelClearAllButton: document.getElementById("novelClearAllButton"),
+  novelBody: document.getElementById("novelBody"),
   networksBody: document.getElementById("networksBody"),
   networksPrevButton: document.getElementById("networksPrevButton"),
   networksNextButton: document.getElementById("networksNextButton"),
@@ -140,6 +169,25 @@ function formatDuration(ms) {
     return `${ms} ms`;
   }
   return `${(ms / 1000).toFixed(2)} s`;
+}
+
+function normalizeWindowHours(value) {
+  const parsed = Math.trunc(Number(value));
+  if (!Number.isFinite(parsed)) {
+    return state.novel.windowHours;
+  }
+  return Math.min(Math.max(parsed, 1), 168);
+}
+
+function updateNovelWindowPreference(nextValue) {
+  const windowHours = normalizeWindowHours(nextValue);
+  state.novel.windowHours = windowHours;
+  elements.novelWindowInput.value = String(windowHours);
+  try {
+    window.localStorage.setItem(STORAGE_NOVEL_WINDOW_HOURS, String(windowHours));
+  } catch (_error) {
+    // Ignore storage write failures.
+  }
 }
 
 function frequencyBandLabel(frequencyMhz, channel) {
@@ -247,6 +295,43 @@ function renderNetworks() {
   elements.networksPageLabel.textContent = `Page ${currentPage}`;
   elements.networksPrevButton.disabled = state.networks.offset === 0;
   elements.networksNextButton.disabled = state.networks.items.length < state.networks.limit;
+}
+
+function renderNovelNetworks() {
+  elements.novelBody.innerHTML = "";
+  if (state.novel.items.length === 0) {
+    elements.novelBody.innerHTML = '<tr><td colspan="9">No one-time networks found.</td></tr>';
+    return;
+  }
+
+  state.novel.items.forEach((item) => {
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td>${escapeHtml(item.ssid || "<hidden>")}</td>
+      <td><code>${escapeHtml(item.bssid)}</code></td>
+      <td>${formatDate(item.first_seen)}</td>
+      <td>${formatDate(item.last_seen)}</td>
+      <td>${item.strongest_rssi ?? "-"}</td>
+      <td>${item.channel ?? "-"}</td>
+      <td>${frequencyBandLabel(item.frequency_mhz, item.channel)}</td>
+      <td>${item.currently_visible ? "yes" : "no"}</td>
+      <td class="table-action-cell"></td>
+    `;
+    const actionCell = row.querySelector(".table-action-cell");
+    const clearButton = document.createElement("button");
+    clearButton.type = "button";
+    clearButton.className = "ghost";
+    clearButton.textContent = "Clear";
+    clearButton.addEventListener("click", async () => {
+      try {
+        await clearNovelNetwork(item.bssid);
+      } catch (error) {
+        showToast(error.message);
+      }
+    });
+    actionCell?.appendChild(clearButton);
+    elements.novelBody.appendChild(row);
+  });
 }
 
 function renderRuns() {
@@ -364,6 +449,15 @@ function currentRunsQuery() {
   };
 }
 
+function currentNovelQuery() {
+  return {
+    window_hours: state.novel.windowHours,
+    query: state.novel.query,
+    limit: state.novel.limit,
+    offset: state.novel.offset,
+  };
+}
+
 async function loadNetworks() {
   const payload = await requestJson(`/networks?${toQuery(currentNetworkQuery())}`);
   state.networks.items = Array.isArray(payload.items) ? payload.items : [];
@@ -372,6 +466,37 @@ async function loadNetworks() {
 async function loadRuns() {
   const payload = await requestJson(`/scan-runs?${toQuery(currentRunsQuery())}`);
   state.runs.items = Array.isArray(payload.items) ? payload.items : [];
+}
+
+async function loadNovelNetworks() {
+  const payload = await requestJson(`/novel-networks?${toQuery(currentNovelQuery())}`);
+  state.novel.items = Array.isArray(payload.items) ? payload.items : [];
+}
+
+async function clearNovelNetwork(bssid) {
+  await requestJson("/novel-networks/clear", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ bssid }),
+  });
+  await loadNovelNetworks();
+  renderNovelNetworks();
+  showToast(`Cleared ${bssid}`);
+}
+
+async function clearAllNovelNetworks() {
+  const result = await requestJson("/novel-networks/clear", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      clear_all: true,
+      window_hours: state.novel.windowHours,
+      query: state.novel.query,
+    }),
+  });
+  await loadNovelNetworks();
+  renderNovelNetworks();
+  showToast(`Cleared ${result.cleared ?? 0} networks`);
 }
 
 async function openRunDetail(scanRunId) {
@@ -412,14 +537,18 @@ function closeRunDrawer() {
 }
 
 async function refreshAll() {
-  await Promise.all([loadHealth(), loadRules(), loadNetworks(), loadRuns()]);
+  await Promise.all([loadHealth(), loadRules(), loadNetworks(), loadRuns(), loadNovelNetworks()]);
   renderHealth();
   renderNetworks();
+  renderNovelNetworks();
   renderRuns();
   renderRules();
 }
 
 function bindEvents() {
+  elements.novelWindowInput.value = String(state.novel.windowHours);
+  elements.novelQueryInput.value = state.novel.query;
+
   elements.toggleRunsButton.addEventListener("click", () => {
     state.ui.scanRunsCollapsed = !state.ui.scanRunsCollapsed;
     saveCollapsedPreference(STORAGE_SCAN_RUNS_COLLAPSED, state.ui.scanRunsCollapsed);
@@ -440,6 +569,21 @@ function bindEvents() {
 
   elements.refreshButton.addEventListener("click", () => {
     refreshAll().catch((error) => showToast(error.message));
+  });
+
+  elements.novelRefreshButton.addEventListener("click", async () => {
+    state.novel.query = elements.novelQueryInput.value.trim();
+    updateNovelWindowPreference(elements.novelWindowInput.value);
+    state.novel.offset = 0;
+    await loadNovelNetworks();
+    renderNovelNetworks();
+  });
+
+  elements.novelClearAllButton.addEventListener("click", async () => {
+    if (!window.confirm("Clear all currently listed one-time networks?")) {
+      return;
+    }
+    await clearAllNovelNetworks();
   });
 
   elements.forceScanButton.addEventListener("click", async () => {
@@ -467,6 +611,34 @@ function bindEvents() {
       state.runs.offset = 0;
       refreshAll().catch((error) => showToast(error.message));
     });
+  });
+
+  elements.novelWindowInput.addEventListener("change", () => {
+    updateNovelWindowPreference(elements.novelWindowInput.value);
+    state.novel.offset = 0;
+    loadNovelNetworks()
+      .then(() => renderNovelNetworks())
+      .catch((error) => showToast(error.message));
+  });
+
+  elements.novelQueryInput.addEventListener("change", () => {
+    state.novel.query = elements.novelQueryInput.value.trim();
+    state.novel.offset = 0;
+    loadNovelNetworks()
+      .then(() => renderNovelNetworks())
+      .catch((error) => showToast(error.message));
+  });
+
+  elements.novelQueryInput.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") {
+      return;
+    }
+    event.preventDefault();
+    state.novel.query = elements.novelQueryInput.value.trim();
+    state.novel.offset = 0;
+    loadNovelNetworks()
+      .then(() => renderNovelNetworks())
+      .catch((error) => showToast(error.message));
   });
 
   elements.networksPrevButton.addEventListener("click", () => {
