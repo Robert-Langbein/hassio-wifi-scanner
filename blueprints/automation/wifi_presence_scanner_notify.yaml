@@ -1,0 +1,48 @@
+blueprint:
+  name: WiFi Presence Scanner Notification
+  description: Send a mobile notification when a tracked WiFi appears or matches a fingerprint rule.
+  domain: automation
+  input:
+    notify_service:
+      name: Notify service
+      selector:
+        service: {}
+    event_types:
+      name: Event types
+      description: Home Assistant events that should trigger this automation.
+      default:
+        - wifi_presence_scanner_rule_matched
+        - wifi_presence_scanner_wifi_discovered
+      selector:
+        select:
+          multiple: true
+          options:
+            - wifi_presence_scanner_rule_matched
+            - wifi_presence_scanner_wifi_discovered
+            - wifi_presence_scanner_wifi_disappeared
+    title_prefix:
+      name: Notification title prefix
+      default: "WiFi Presence"
+      selector:
+        text: {}
+
+mode: queued
+max: 20
+
+trigger:
+  - platform: event
+    event_type: !input event_types
+
+action:
+  - variables:
+      payload: "{{ trigger.event.data }}"
+      title_prefix: !input title_prefix
+      event_type: "{{ trigger.event.event_type }}"
+  - service: !input notify_service
+    data:
+      title: "{{ title_prefix }} - {{ event_type }}"
+      message: >-
+        SSID={{ payload.ssid | default('unknown') }},
+        BSSID={{ payload.bssid | default('unknown') }},
+        Rule={{ payload.rule_name | default('none') }},
+        RSSI={{ payload.rssi | default('n/a') }}

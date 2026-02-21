@@ -1,0 +1,104 @@
+:root {
+  color-scheme: light;
+  --bg: #f4f6f5;
+  --surface: #ffffff;
+  --text: #0f2a22;
+  --muted: #53766b;
+  --border: #ccdad5;
+  --accent: #00684a;
+  --danger: #9a1a1a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: radial-gradient(circle at top, #eaf3ef, var(--bg));
+  color: var(--text);
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+}
+
+.shell {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.panel {
+  margin-top: 1rem;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 0.8rem;
+  padding: 1rem;
+  box-shadow: 0 10px 20px rgb(0 0 0 / 4%);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.8rem;
+}
+
+label {
+  display: grid;
+  font-size: 0.9rem;
+  color: var(--muted);
+  gap: 0.35rem;
+}
+
+input,
+select,
+button {
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  font-size: 0.92rem;
+}
+
+button {
+  cursor: pointer;
+  background: var(--accent);
+  color: #fff;
+  border: 0;
+}
+
+button.danger {
+  background: var(--danger);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+th,
+td {
+  border-bottom: 1px solid var(--border);
+  padding: 0.5rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+pre {
+  margin: 0;
+  background: #f8fbfa;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.8rem;
+  overflow: auto;
+}
+
+@media (max-width: 700px) {
+  table {
+    font-size: 0.82rem;
+  }
+}

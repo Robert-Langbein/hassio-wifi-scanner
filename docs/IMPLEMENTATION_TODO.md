@@ -1,0 +1,44 @@
+# WiFi Presence Scanner - Detailed To-Do
+
+## Repository and protocol
+- [x] Create repository structure for app, integration, agent, docs, blueprints.
+- [x] Create shared JSON schemas for network observation, fingerprint rules, and event payload.
+
+## Backend core
+- [x] Implement SQLite database layer with migrations, indices, retention purge, event table.
+- [x] Implement sessionization engine for discovered/disappeared logic with missed-scan debounce.
+- [x] Implement fingerprint rule engine with cooldown and short-repeat heuristics.
+- [x] Implement scheduler with scan interval and quiet windows.
+- [x] Implement ignore filters, privacy hash mode, and config validation.
+- [x] Implement health state and warning event behavior on scan failures.
+
+## Scanner implementations
+- [x] Implement Supervisor scanner using Supervisor network accesspoints endpoint.
+- [x] Implement Companion scanner using `iw` command parser.
+
+## API and UI
+- [x] Implement REST API endpoints for health, networks, sessions, rules, short-repeat stats, trigger scan.
+- [x] Implement backend static UI with search/filter/rule management.
+- [x] Implement Home Assistant fallback panel view and API proxy endpoints.
+
+## Home Assistant integration
+- [x] Create custom integration domain `wifi_presence_scanner`.
+- [x] Implement config flow and options flow.
+- [x] Implement coordinator polling backend health/events and firing HA events.
+- [x] Implement services: force_scan, reload_rules, purge_history.
+- [x] Implement entities:
+  - [x] sensor last scan
+  - [x] sensor seen networks
+  - [x] binary sensor healthy
+
+## Packaging and distribution
+- [x] Create supervisor add-on scaffold and run scripts.
+- [x] Create companion agent Dockerfile and compose example.
+- [x] Provide HACS structure (`custom_components`) and metadata (`hacs.json`).
+- [x] Provide blueprint for notification automations.
+
+## Validation and tests
+- [ ] Add full E2E test matrix on HA OS / Supervised / Core+Agent.
+- [ ] Add load/performance verification for 30s scan interval over long runtime.
+- [ ] Add integration tests with real WLAN hardware capture.
+- [ ] Conduct final security hardening pass against deployment-specific exposure.

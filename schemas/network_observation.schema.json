@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wifi-presence-scanner.local/schemas/network_observation.schema.json",
+  "title": "NetworkObservation",
+  "type": "object",
+  "required": [
+    "scanner_source",
+    "interface",
+    "ssid",
+    "bssid",
+    "rssi",
+    "channel",
+    "frequency_mhz",
+    "seen_at"
+  ],
+  "properties": {
+    "scanner_source": {
+      "type": "string",
+      "enum": ["supervisor", "agent"]
+    },
+    "interface": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ssid": {
+      "type": "string"
+    },
+    "bssid": {
+      "type": "string",
+      "pattern": "^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$"
+    },
+    "bssid_hash": {
+      "type": ["string", "null"]
+    },
+    "oui_vendor": {
+      "type": ["string", "null"]
+    },
+    "rssi": {
+      "type": "integer"
+    },
+    "channel": {
+      "type": "integer"
+    },
+    "frequency_mhz": {
+      "type": "integer"
+    },
+    "seen_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,18 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "WiFi Presence Scanner",
+        "description": "Verbinde die Integration mit dem Scanner-Backend.",
+        "data": {
+          "mode": "Modus",
+          "backend_url": "Backend-URL",
+          "api_key": "API-Schluessel"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Verbindung zum Scanner-Backend fehlgeschlagen"
+    }
+  }
+}

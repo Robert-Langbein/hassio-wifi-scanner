@@ -1,0 +1,36 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "WiFi Presence Scanner",
+        "description": "Connect this integration to the scanner backend.",
+        "data": {
+          "mode": "Mode",
+          "backend_url": "Backend URL",
+          "api_key": "API key"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot connect to scanner backend"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Scanner options",
+        "data": {
+          "wifi_interface": "WiFi interface",
+          "scan_interval_sec": "Scan interval (seconds)",
+          "disappear_missed_scans": "Missing scans until disappear",
+          "retention_days": "Retention days",
+          "privacy_mode": "Privacy mode",
+          "privacy_salt": "Privacy salt",
+          "quiet_windows_json": "Quiet windows JSON",
+          "ignore_ssid_patterns": "Ignore SSID patterns (CSV regex)",
+          "ignore_bssid_prefixes": "Ignore BSSID prefixes (CSV)"
+        }
+      }
+    }
+  }
+}

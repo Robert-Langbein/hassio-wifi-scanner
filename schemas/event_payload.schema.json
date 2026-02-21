@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wifi-presence-scanner.local/schemas/event_payload.schema.json",
+  "title": "RuleMatchEvent",
+  "type": "object",
+  "required": [
+    "scanner_source",
+    "interface",
+    "ssid",
+    "bssid",
+    "first_seen",
+    "last_seen",
+    "seen_count"
+  ],
+  "properties": {
+    "scanner_source": { "type": "string" },
+    "interface": { "type": "string" },
+    "ssid": { "type": "string" },
+    "bssid": { "type": "string" },
+    "bssid_hash": { "type": ["string", "null"] },
+    "oui_vendor": { "type": ["string", "null"] },
+    "rssi": { "type": ["integer", "null"] },
+    "channel": { "type": ["integer", "null"] },
+    "first_seen": { "type": "string", "format": "date-time" },
+    "last_seen": { "type": "string", "format": "date-time" },
+    "seen_count": { "type": "integer", "minimum": 1 },
+    "rule_id": { "type": ["integer", "null"] },
+    "rule_name": { "type": ["string", "null"] },
+    "confidence": { "type": ["number", "null"] },
+    "reason": {
+      "type": ["object", "string", "null"]
+    }
+  },
+  "additionalProperties": false
+}

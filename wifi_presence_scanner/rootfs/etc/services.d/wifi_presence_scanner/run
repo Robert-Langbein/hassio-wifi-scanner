@@ -1,0 +1,53 @@
+#!/usr/bin/with-contenv sh
+set -eu
+
+CONFIG_PATH="/data/options.json"
+
+read_config() {
+  key="$1"
+  default="$2"
+  if [ -f "$CONFIG_PATH" ]; then
+    value=$(python3 - <<'PY' "$CONFIG_PATH" "$key" "$default"
+import json
+import sys
+
+path, key, default = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    with open(path, "r", encoding="utf-8") as fh:
+        data = json.load(fh)
+except FileNotFoundError:
+    print(default)
+    raise SystemExit
+
+value = data.get(key, default)
+if isinstance(value, bool):
+    print("true" if value else "false")
+else:
+    print(str(value))
+PY
+)
+    echo "$value"
+  else
+    echo "$default"
+  fi
+}
+
+export PYTHONPATH="/opt/wifi_presence_scanner/src"
+export WIFI_INTERFACE="$(read_config wifi_interface wlan0)"
+export SCAN_INTERVAL_SEC="$(read_config scan_interval_sec 30)"
+export DISAPPEAR_MISSED_SCANS="$(read_config disappear_missed_scans 2)"
+export RETENTION_DAYS="$(read_config retention_days 30)"
+export PRIVACY_MODE="$(read_config privacy_mode false)"
+export PRIVACY_SALT="$(read_config privacy_salt '')"
+export QUIET_WINDOWS_JSON="$(read_config quiet_windows_json '[]')"
+export IGNORE_SSID_PATTERNS="$(read_config ignore_ssid_patterns '')"
+export IGNORE_BSSID_PREFIXES="$(read_config ignore_bssid_prefixes '')"
+
+export HTTP_HOST="0.0.0.0"
+export HTTP_PORT="8099"
+export DB_PATH="/data/wifi_presence_scanner.db"
+export STATIC_DIR="/opt/wifi_presence_scanner/src/wifi_presence_backend/ui"
+export HA_API_URL="http://supervisor/core/api"
+export HA_API_TOKEN="${SUPERVISOR_TOKEN}"
+
+exec python3 -m wifi_presence_backend.supervisor_main

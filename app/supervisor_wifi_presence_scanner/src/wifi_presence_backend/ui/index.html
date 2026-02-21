@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WiFi Presence Scanner</title>
+    <link rel="stylesheet" href="/ui/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <h1>WiFi Presence Scanner</h1>
+        <button id="refreshButton" type="button">Refresh</button>
+      </header>
+
+      <section class="panel">
+        <h2>Search & Filters</h2>
+        <div class="grid">
+          <label>
+            Search
+            <input id="queryInput" placeholder="SSID, BSSID, Vendor" />
+          </label>
+          <label>
+            Rule ID
+            <input id="ruleInput" placeholder="e.g. 1" />
+          </label>
+          <label>
+            Short Repeat
+            <select id="shortRepeatInput">
+              <option value="false">Disabled</option>
+              <option value="true">Enabled</option>
+            </select>
+          </label>
+          <label>
+            Limit
+            <input id="limitInput" type="number" min="1" max="1000" value="100" />
+          </label>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Health</h2>
+        <pre id="healthOutput">Loading...</pre>
+      </section>
+
+      <section class="panel">
+        <h2>Networks</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Visible</th>
+              <th>SSID</th>
+              <th>BSSID</th>
+              <th>Seen</th>
+              <th>Strongest RSSI</th>
+              <th>Last Seen</th>
+            </tr>
+          </thead>
+          <tbody id="networksBody"></tbody>
+        </table>
+      </section>
+
+      <section class="panel">
+        <h2>Rules</h2>
+        <form id="ruleForm">
+          <div class="grid">
+            <label>
+              Name
+              <input name="name" required />
+            </label>
+            <label>
+              SSID Regex
+              <input name="ssid_regex" />
+            </label>
+            <label>
+              BSSID Prefix CSV
+              <input name="bssid_prefix_csv" placeholder="AA:BB:CC,11:22:33" />
+            </label>
+            <label>
+              Min RSSI
+              <input name="min_rssi" type="number" />
+            </label>
+            <label>
+              Cooldown (sec)
+              <input name="cooldown_sec" type="number" value="0" min="0" />
+            </label>
+          </div>
+          <button type="submit">Create Rule</button>
+        </form>
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Name</th>
+              <th>Enabled</th>
+              <th>Regex</th>
+              <th>BSSID Prefix</th>
+              <th>Min RSSI</th>
+              <th>Cooldown</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="rulesBody"></tbody>
+        </table>
+      </section>
+    </main>
+
+    <script src="/ui/app.js" type="module"></script>
+  </body>
+</html>

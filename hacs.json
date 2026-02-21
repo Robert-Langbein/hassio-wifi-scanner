@@ -1,0 +1,8 @@
+{
+  "name": "WiFi Presence Scanner",
+  "content_in_root": false,
+  "render_readme": true,
+  "domains": ["wifi_presence_scanner"],
+  "country": ["DE", "US"],
+  "homeassistant": ">=2024.6.0"
+}

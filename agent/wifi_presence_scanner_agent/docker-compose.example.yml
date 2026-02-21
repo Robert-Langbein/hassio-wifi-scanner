@@ -1,0 +1,25 @@
+services:
+  wifi_presence_scanner_agent:
+    build:
+      context: ../..
+      dockerfile: agent/wifi_presence_scanner_agent/Dockerfile
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    environment:
+      API_KEY: "CHANGE_ME"
+      HTTP_HOST: "127.0.0.1"
+      HTTP_PORT: "8100"
+      WIFI_INTERFACE: "wlan0"
+      SCAN_INTERVAL_SEC: "30"
+      DISAPPEAR_MISSED_SCANS: "2"
+      RETENTION_DAYS: "30"
+      QUIET_WINDOWS_JSON: "[]"
+      IGNORE_SSID_PATTERNS: ""
+      IGNORE_BSSID_PREFIXES: ""
+    volumes:
+      - wifi_presence_data:/var/lib/wifi_presence_scanner
+
+volumes:
+  wifi_presence_data: {}

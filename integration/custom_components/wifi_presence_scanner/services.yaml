@@ -1,0 +1,11 @@
+force_scan:
+  name: Force scan
+  description: Trigger an immediate WiFi scan.
+
+reload_rules:
+  name: Reload rules
+  description: Trigger coordinator refresh and reload rules list.
+
+purge_history:
+  name: Purge history
+  description: Purge old observation history using backend retention settings.

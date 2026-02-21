@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wifi-presence-scanner.local/schemas/fingerprint_rule.schema.json",
+  "title": "FingerprintRule",
+  "type": "object",
+  "required": ["name", "enabled", "cooldown_sec"],
+  "properties": {
+    "id": {
+      "type": "integer"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "ssid_regex": {
+      "type": ["string", "null"],
+      "maxLength": 256
+    },
+    "bssid_prefix_csv": {
+      "type": ["string", "null"]
+    },
+    "oui_vendor_csv": {
+      "type": ["string", "null"]
+    },
+    "min_rssi": {
+      "type": ["integer", "null"]
+    },
+    "max_duration_sec": {
+      "type": ["integer", "null"],
+      "minimum": 1
+    },
+    "min_reappear_count": {
+      "type": ["integer", "null"],
+      "minimum": 1
+    },
+    "cooldown_sec": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 86400
+    }
+  },
+  "additionalProperties": false
+}
