@@ -60,7 +60,7 @@ def _run_supervisor_preflight(*, scanner: SupervisorApiScanner, interface: str) 
         if exc.status_code == HTTPStatus.FORBIDDEN:
             _RUNTIME_LOGGER.error(
                 "event=supervisor_preflight_forbidden endpoint=/network/info interface=%s "
-                "reason=supervisor_forbidden hint=check_addon_permissions_and_restart message=%s",
+                "reason=supervisor_forbidden hint=requires_hassio_role_manager_and_restart message=%s",
                 interface,
                 str(exc),
             )
@@ -84,7 +84,7 @@ def _run_supervisor_preflight(*, scanner: SupervisorApiScanner, interface: str) 
         if exc.status_code == HTTPStatus.FORBIDDEN:
             _RUNTIME_LOGGER.error(
                 "event=supervisor_preflight_forbidden endpoint=/network/interface/%s/info interface=%s "
-                "reason=supervisor_forbidden hint=check_addon_permissions_and_restart message=%s",
+                "reason=supervisor_forbidden hint=requires_hassio_role_manager_and_restart message=%s",
                 interface,
                 interface,
                 str(exc),
@@ -96,6 +96,12 @@ def _run_supervisor_preflight(*, scanner: SupervisorApiScanner, interface: str) 
             interface,
             str(exc),
         )
+        return
+
+    _RUNTIME_LOGGER.info(
+        "event=supervisor_preflight_note endpoint=/network/interface/%s/accesspoints requirement=hassio_role_manager",
+        interface,
+    )
 
 
 def run_backend(*, source: str) -> None:

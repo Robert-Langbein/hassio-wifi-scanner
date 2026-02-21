@@ -272,6 +272,8 @@ class ScannerService:
                 status_code = getattr(exc, "status_code", None)
                 if status_code == 403 or "Supervisor API error 403" in err:
                     reason = "supervisor_forbidden"
+                elif "invalid accesspoints payload" in err.lower():
+                    reason = "supervisor_payload_invalid"
                 duration_ms = int((time.monotonic() - started_monotonic) * 1000)
                 self._db.finish_scan_run(
                     scan_run_id=scan_run_id,

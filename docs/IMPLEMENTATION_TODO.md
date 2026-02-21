@@ -15,6 +15,7 @@
 ## Scanner implementations
 - [x] Implement Supervisor scanner using Supervisor network accesspoints endpoint.
 - [x] Implement Companion scanner using `iw` command parser.
+- [x] Add Supervisor payload compatibility for both legacy list and `data.accesspoints[]` response formats.
 
 ## API and UI
 - [x] Implement REST API endpoints for health, networks, sessions, rules, short-repeat stats, trigger scan.
@@ -29,6 +30,7 @@
 - [x] Keep HTTP access logs disabled by default and enable in debug mode.
 - [x] Add supervisor startup preflight diagnostics for `/network/info` and interface permissions.
 - [x] Tag scanner 403 failures as `reason=supervisor_forbidden` in logs and health warnings.
+- [x] Tag invalid Supervisor accesspoint payload failures as `reason=supervisor_payload_invalid`.
 - [x] Fix ingress UI static asset paths to use ingress-safe relative URLs.
 - [x] Harden static file MIME mapping for CSS/JS delivery.
 

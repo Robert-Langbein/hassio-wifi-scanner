@@ -46,9 +46,9 @@ The add-on prints structured scan lines in Supervisor logs. Example:
 
 If scan logs show `Supervisor API error 403`:
 
-1. Ensure add-on version is `1.0.1` or newer.
+1. Ensure add-on version is `1.0.2` or newer (`hassio_role: manager`).
 2. Reload add-on repository and upgrade to newest version.
 3. Restart the add-on after upgrade.
 4. Verify `wifi_interface` points to a valid WiFi interface (for example `wlan0`).
 
-Startup logs include preflight checks for `/network/info` and `/network/interface/<iface>/info` to clarify permission failures.
+Startup logs include preflight checks for `/network/info` and `/network/interface/<iface>/info` plus an accesspoint role note for `/network/interface/<iface>/accesspoints`.

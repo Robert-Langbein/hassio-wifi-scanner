@@ -110,25 +110,44 @@ class SupervisorApiScanner(ScanSource):
             )
         return data
 
+    @staticmethod
+    def _extract_accesspoints_payload(data: dict[str, object] | list[object]) -> list[object]:
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict):
+            accesspoints = data.get("accesspoints")
+            if isinstance(accesspoints, list):
+                return accesspoints
+        raise SupervisorApiError(
+            status_code=None,
+            message="Supervisor API returned invalid accesspoints payload",
+        )
+
     def scan(self, *, interface: str) -> list[ScanRawNetwork]:
         data = self._request(path=f"/network/interface/{interface}/accesspoints")
-        if not isinstance(data, list):
-            raise SupervisorApiError(
-                status_code=None,
-                message="Supervisor API returned invalid accesspoints payload",
-            )
+        accesspoints = self._extract_accesspoints_payload(data)
 
         results: list[ScanRawNetwork] = []
-        for entry in data:
+        for entry in accesspoints:
             if not isinstance(entry, dict):
                 continue
-            bssid = str(entry.get("bssid", "")).upper()
+            bssid_raw = entry.get("bssid") or entry.get("mac") or ""
+            bssid = str(bssid_raw).strip().upper()
             if not BSSID_RE.match(bssid):
                 continue
             ssid = str(entry.get("ssid", "")).strip()
-            frequency = int(entry.get("frequency") or entry.get("frequency_mhz") or 0)
-            channel = int(entry.get("channel") or _frequency_to_channel(frequency))
-            rssi = int(float(entry.get("signal") or entry.get("rssi") or -100))
+            try:
+                frequency = int(float(entry.get("frequency") or entry.get("frequency_mhz") or 0))
+            except (TypeError, ValueError):
+                frequency = 0
+            try:
+                channel = int(float(entry.get("channel")))
+            except (TypeError, ValueError):
+                channel = _frequency_to_channel(frequency)
+            try:
+                rssi = int(float(entry.get("signal") or entry.get("rssi") or -100))
+            except (TypeError, ValueError):
+                rssi = -100
             results.append(
                 ScanRawNetwork(
                     ssid=ssid,
