@@ -656,17 +656,18 @@ class Database:
         self,
         *,
         window_hours: int,
+        max_sessions: int,
         query: str | None,
         limit: int,
         offset: int,
     ) -> list[dict[str, Any]]:
         window_days = window_hours / 24.0
         where_parts: list[str] = [
-            "sc.sessions_in_window = 1",
+            "sc.total_sessions <= ?",
             "julianday('now') >= julianday(sc.first_seen_global) + ?",
             "nc.bssid IS NULL",
         ]
-        args: list[Any] = [window_days, window_days]
+        args: list[Any] = [max_sessions, window_days]
         if query:
             like = f"%{query}%"
             where_parts.append("(coalesce(lo.ssid, '') LIKE ? OR sc.bssid LIKE ? OR coalesce(lo.oui_vendor, '') LIKE ?)")
@@ -674,23 +675,13 @@ class Database:
 
         where_clause = "WHERE " + " AND ".join(where_parts)
         sql = f"""
-            WITH first_sessions AS (
+            WITH session_counts AS (
                 SELECT
                     bssid,
-                    MIN(first_seen) AS first_seen_global
+                    MIN(first_seen) AS first_seen_global,
+                    COUNT(id) AS total_sessions
                 FROM presence_sessions
                 GROUP BY bssid
-            ),
-            session_counts AS (
-                SELECT
-                    fs.bssid,
-                    fs.first_seen_global,
-                    COUNT(ps.id) AS sessions_in_window
-                FROM first_sessions fs
-                JOIN presence_sessions ps
-                    ON ps.bssid = fs.bssid
-                WHERE julianday(ps.first_seen) <= julianday(fs.first_seen_global) + ?
-                GROUP BY fs.bssid, fs.first_seen_global
             ),
             latest_observation AS (
                 SELECT
@@ -738,14 +729,14 @@ class Database:
             )
             return True
 
-    def clear_novel_networks(self, *, window_hours: int, query: str | None) -> int:
+    def clear_novel_networks(self, *, window_hours: int, max_sessions: int, query: str | None) -> int:
         window_days = window_hours / 24.0
         where_parts: list[str] = [
-            "sc.sessions_in_window = 1",
+            "sc.total_sessions <= ?",
             "julianday('now') >= julianday(sc.first_seen_global) + ?",
             "nc.bssid IS NULL",
         ]
-        args: list[Any] = [window_days, window_days]
+        args: list[Any] = [max_sessions, window_days]
         if query:
             like = f"%{query}%"
             where_parts.append("(coalesce(lo.ssid, '') LIKE ? OR sc.bssid LIKE ? OR coalesce(lo.oui_vendor, '') LIKE ?)")
@@ -753,23 +744,13 @@ class Database:
 
         where_clause = "WHERE " + " AND ".join(where_parts)
         sql = f"""
-            WITH first_sessions AS (
+            WITH session_counts AS (
                 SELECT
                     bssid,
-                    MIN(first_seen) AS first_seen_global
+                    MIN(first_seen) AS first_seen_global,
+                    COUNT(id) AS total_sessions
                 FROM presence_sessions
                 GROUP BY bssid
-            ),
-            session_counts AS (
-                SELECT
-                    fs.bssid,
-                    fs.first_seen_global,
-                    COUNT(ps.id) AS sessions_in_window
-                FROM first_sessions fs
-                JOIN presence_sessions ps
-                    ON ps.bssid = fs.bssid
-                WHERE julianday(ps.first_seen) <= julianday(fs.first_seen_global) + ?
-                GROUP BY fs.bssid, fs.first_seen_global
             ),
             latest_observation AS (
                 SELECT

@@ -108,7 +108,7 @@
 
       <section class="panel">
         <div class="panel-head">
-          <h2>One-time Networks</h2>
+          <h2>Rare Networks</h2>
           <div class="panel-tools">
             <button id="novelRefreshButton" type="button" class="ghost">Refresh</button>
             <button id="novelClearAllButton" type="button" class="danger">Clear All</button>
@@ -120,12 +120,16 @@
             <input id="novelWindowInput" type="number" min="1" max="168" step="1" value="24" />
           </label>
           <label>
+            Max Sessions
+            <input id="novelMaxSessionsInput" type="number" min="1" step="1" value="1" />
+          </label>
+          <label>
             Search
             <input id="novelQueryInput" placeholder="SSID, BSSID, vendor" />
           </label>
         </div>
         <p class="muted-note">
-          A network is listed when it appears once and does not start another session within the configured window.
+          A network is listed when it has at most the configured total sessions and has aged past the configured window.
           Cleared items stay hidden until database reset.
         </p>
         <div class="table-wrap">

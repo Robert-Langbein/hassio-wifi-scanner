@@ -15,7 +15,7 @@ WiFi presence tracking solution for Home Assistant with support for:
 - Search/filter list of scanned WiFi networks
 - Frequency-band visibility (`2.4/5/6 GHz`) in network and observation tables
 - Networks table shows `Max RSSI` (highest observed value in the selected history window)
-- One-time networks card with configurable `n`-hour window and manual clear (persistent)
+- Rare networks card with configurable `n`-hour window, max-session threshold, and manual clear (persistent)
 - Short-repeating network filter for courier-like patterns
 - Scan run history with detail drilldown (runs + observations)
 - Collapsible `Scan Runs` and `Health JSON` sections with per-browser state persistence
@@ -95,13 +95,14 @@ At startup, the backend logs supervisor preflight checks for `/network/info` and
 
 If Ingress UI shows `404` in health/network sections while scan logs are successful, update to `1.0.7` or newer.
 
-## One-time Networks Card
+## Rare Networks Card
 
-The `One-time Networks` card highlights networks that only formed one session in the first `n` hours after they were first seen.
+The `Rare Networks` card highlights networks that have at most the configured total session count after the configured `n`-hour maturation window has passed.
 
 - `Window (hours)` is configurable (default `24`) and stored per browser.
+- `Max Sessions` is configurable (default `1`) and stored per browser.
 - `Clear` removes a single BSSID from this list.
-- `Clear All` removes all currently listed rows for the active window/query.
+- `Clear All` removes all currently listed rows for the active window/max-session/query filter.
 - Clears are stored in backend SQLite and survive restarts.
 
 ## Blueprint

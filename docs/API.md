@@ -30,17 +30,18 @@ Returns tracked presence sessions for one BSSID.
 Query params:
 
 - `window_hours` (1..168, default `24`)
+- `max_sessions` (>= `1`, default `1`)
 - `query`
 - `limit`
 - `offset`
 
-Returns one-time network candidates: BSSIDs with only one session inside the configured time window after first sighting.
+Returns rare-network candidates: BSSIDs with at most `max_sessions` total sessions after the configured maturation window since first sighting. The response echoes `window_hours`, `max_sessions`, `query`, `limit`, and `offset`.
 
 ### `POST /v1/novel-networks/clear`
 Payload options:
 
 - `{ "bssid": "AA:BB:CC:DD:EE:FF" }` clears one entry.
-- `{ "clear_all": true, "window_hours": 24, "query": "" }` clears the currently matching set.
+- `{ "clear_all": true, "window_hours": 24, "max_sessions": 1, "query": "" }` clears the currently matching set.
 
 ### `GET /v1/scan-runs`
 Query params:

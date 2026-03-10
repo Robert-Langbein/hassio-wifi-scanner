@@ -3,6 +3,7 @@ const STORAGE_SCAN_RUNS_COLLAPSED = "wps_scan_runs_collapsed";
 const STORAGE_HEALTH_COLLAPSED = "wps_health_collapsed";
 const STORAGE_RULES_HELP_COLLAPSED = "wps_rules_help_collapsed";
 const STORAGE_NOVEL_WINDOW_HOURS = "wps_novel_window_hours";
+const STORAGE_NOVEL_MAX_SESSIONS = "wps_novel_max_sessions";
 
 function loadCollapsedPreference(storageKey, defaultValue) {
   try {
@@ -57,6 +58,7 @@ const state = {
     limit: 100,
     offset: 0,
     windowHours: loadIntegerPreference(STORAGE_NOVEL_WINDOW_HOURS, 24, 1, 168),
+    maxSessions: loadIntegerPreference(STORAGE_NOVEL_MAX_SESSIONS, 1, 1, 9999),
     query: "",
     items: [],
   },
@@ -82,6 +84,7 @@ const elements = {
   toInput: document.getElementById("toInput"),
   scanStatusInput: document.getElementById("scanStatusInput"),
   novelWindowInput: document.getElementById("novelWindowInput"),
+  novelMaxSessionsInput: document.getElementById("novelMaxSessionsInput"),
   novelQueryInput: document.getElementById("novelQueryInput"),
   novelRefreshButton: document.getElementById("novelRefreshButton"),
   novelClearAllButton: document.getElementById("novelClearAllButton"),
@@ -185,6 +188,25 @@ function updateNovelWindowPreference(nextValue) {
   elements.novelWindowInput.value = String(windowHours);
   try {
     window.localStorage.setItem(STORAGE_NOVEL_WINDOW_HOURS, String(windowHours));
+  } catch (_error) {
+    // Ignore storage write failures.
+  }
+}
+
+function normalizeNovelMaxSessions(value) {
+  const parsed = Math.trunc(Number(value));
+  if (!Number.isFinite(parsed)) {
+    return state.novel.maxSessions;
+  }
+  return Math.min(Math.max(parsed, 1), 9999);
+}
+
+function updateNovelMaxSessionsPreference(nextValue) {
+  const maxSessions = normalizeNovelMaxSessions(nextValue);
+  state.novel.maxSessions = maxSessions;
+  elements.novelMaxSessionsInput.value = String(maxSessions);
+  try {
+    window.localStorage.setItem(STORAGE_NOVEL_MAX_SESSIONS, String(maxSessions));
   } catch (_error) {
     // Ignore storage write failures.
   }
@@ -300,7 +322,7 @@ function renderNetworks() {
 function renderNovelNetworks() {
   elements.novelBody.innerHTML = "";
   if (state.novel.items.length === 0) {
-    elements.novelBody.innerHTML = '<tr><td colspan="9">No one-time networks found.</td></tr>';
+    elements.novelBody.innerHTML = '<tr><td colspan="9">No rare networks found.</td></tr>';
     return;
   }
 
@@ -452,6 +474,7 @@ function currentRunsQuery() {
 function currentNovelQuery() {
   return {
     window_hours: state.novel.windowHours,
+    max_sessions: state.novel.maxSessions,
     query: state.novel.query,
     limit: state.novel.limit,
     offset: state.novel.offset,
@@ -491,6 +514,7 @@ async function clearAllNovelNetworks() {
     body: JSON.stringify({
       clear_all: true,
       window_hours: state.novel.windowHours,
+      max_sessions: state.novel.maxSessions,
       query: state.novel.query,
     }),
   });
@@ -547,6 +571,7 @@ async function refreshAll() {
 
 function bindEvents() {
   elements.novelWindowInput.value = String(state.novel.windowHours);
+  elements.novelMaxSessionsInput.value = String(state.novel.maxSessions);
   elements.novelQueryInput.value = state.novel.query;
 
   elements.toggleRunsButton.addEventListener("click", () => {
@@ -574,13 +599,14 @@ function bindEvents() {
   elements.novelRefreshButton.addEventListener("click", async () => {
     state.novel.query = elements.novelQueryInput.value.trim();
     updateNovelWindowPreference(elements.novelWindowInput.value);
+    updateNovelMaxSessionsPreference(elements.novelMaxSessionsInput.value);
     state.novel.offset = 0;
     await loadNovelNetworks();
     renderNovelNetworks();
   });
 
   elements.novelClearAllButton.addEventListener("click", async () => {
-    if (!window.confirm("Clear all currently listed one-time networks?")) {
+    if (!window.confirm("Clear all currently listed rare networks?")) {
       return;
     }
     await clearAllNovelNetworks();
@@ -615,6 +641,14 @@ function bindEvents() {
 
   elements.novelWindowInput.addEventListener("change", () => {
     updateNovelWindowPreference(elements.novelWindowInput.value);
+    state.novel.offset = 0;
+    loadNovelNetworks()
+      .then(() => renderNovelNetworks())
+      .catch((error) => showToast(error.message));
+  });
+
+  elements.novelMaxSessionsInput.addEventListener("change", () => {
+    updateNovelMaxSessionsPreference(elements.novelMaxSessionsInput.value);
     state.novel.offset = 0;
     loadNovelNetworks()
       .then(() => renderNovelNetworks())

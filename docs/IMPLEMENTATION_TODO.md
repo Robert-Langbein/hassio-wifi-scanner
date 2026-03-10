@@ -37,7 +37,7 @@
 - [x] Add frequency-band presentation in networks and observation tables.
 - [x] Add collapsible Scan Runs/Health sections with persisted UI state.
 - [x] Add Rules guidance panel in UI and switch visual theme to neutral gray full-width layout.
-- [x] Add one-time networks card with configurable time window and persistent manual clear list.
+- [x] Add rare networks card with configurable time window, max-session threshold, and persistent manual clear list.
 
 ## Home Assistant integration
 - [x] Create custom integration domain `wifi_presence_scanner`.

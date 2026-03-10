@@ -55,12 +55,13 @@ Startup logs include preflight checks for `/network/info` and `/network/interfac
 
 If scans are visible in logs but Ingress UI still shows `404`, update to `1.0.7` or newer.
 
-## One-time networks card
+## Rare networks card
 
-The UI includes a `One-time Networks` card:
+The UI includes a `Rare Networks` card:
 
 1. Set `Window (hours)` (default `24`).
-2. Use `Clear` to hide one BSSID from this list.
-3. Use `Clear All` to hide all currently matching one-time entries.
+2. Set `Max Sessions` (default `1`) to control how often a BSSID may appear in total and still count as rare.
+3. Use `Clear` to hide one BSSID from this list.
+4. Use `Clear All` to hide all currently matching rare entries.
 
 Clears are persisted in backend DB and remain hidden across restarts.

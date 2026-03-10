@@ -60,7 +60,7 @@ class DatabaseTests(unittest.TestCase):
             db = Database(f"{tmp}/scanner.db")
 
             old = datetime.now(tz=timezone.utc) - timedelta(hours=30)
-            old_plus_two = old + timedelta(hours=2)
+            old_plus_twenty_six = old + timedelta(hours=26)
             recent = datetime.now(tz=timezone.utc) - timedelta(hours=2)
 
             def record_single_session(
@@ -121,10 +121,10 @@ class DatabaseTests(unittest.TestCase):
                 rssi=-54,
             )
 
-            # Should be excluded: repeated inside 24h window.
+            # Should be excluded for max_sessions=1, even though the repeat is after the window.
             record_single_session(
                 bssid="AA:BB:CC:11:22:44",
-                ssid="Repeat-In-Window",
+                ssid="Repeat-After-Window",
                 at=old,
                 frequency_mhz=2412,
                 channel=1,
@@ -132,8 +132,8 @@ class DatabaseTests(unittest.TestCase):
             )
             record_single_session(
                 bssid="AA:BB:CC:11:22:44",
-                ssid="Repeat-In-Window",
-                at=old_plus_two,
+                ssid="Repeat-After-Window",
+                at=old_plus_twenty_six,
                 frequency_mhz=2412,
                 channel=1,
                 rssi=-63,
@@ -149,12 +149,60 @@ class DatabaseTests(unittest.TestCase):
                 rssi=-72,
             )
 
-            novel = db.list_novel_networks(window_hours=24, query=None, limit=50, offset=0)
+            # Should be included for max_sessions=2.
+            record_single_session(
+                bssid="AA:BB:CC:11:22:77",
+                ssid="Rare-Two-Sessions",
+                at=old,
+                frequency_mhz=2462,
+                channel=11,
+                rssi=-58,
+            )
+            record_single_session(
+                bssid="AA:BB:CC:11:22:77",
+                ssid="Rare-Two-Sessions",
+                at=old_plus_twenty_six,
+                frequency_mhz=2462,
+                channel=11,
+                rssi=-59,
+            )
+
+            novel = db.list_novel_networks(
+                window_hours=24,
+                max_sessions=1,
+                query=None,
+                limit=50,
+                offset=0,
+            )
             self.assertEqual(len(novel), 1)
             self.assertEqual(novel[0]["bssid"], "AA:BB:CC:11:22:33")
 
+            rare_two_sessions = db.list_novel_networks(
+                window_hours=24,
+                max_sessions=2,
+                query="Rare-Two-Sessions",
+                limit=50,
+                offset=0,
+            )
+            self.assertEqual(len(rare_two_sessions), 1)
+            self.assertEqual(rare_two_sessions[0]["bssid"], "AA:BB:CC:11:22:77")
+            repeated_after_window = db.list_novel_networks(
+                window_hours=24,
+                max_sessions=1,
+                query="Repeat-After-Window",
+                limit=50,
+                offset=0,
+            )
+            self.assertEqual(len(repeated_after_window), 0)
+
             db.clear_novel_network(bssid="AA:BB:CC:11:22:33")
-            after_single_clear = db.list_novel_networks(window_hours=24, query=None, limit=50, offset=0)
+            after_single_clear = db.list_novel_networks(
+                window_hours=24,
+                max_sessions=1,
+                query=None,
+                limit=50,
+                offset=0,
+            )
             self.assertEqual(len(after_single_clear), 0)
 
             # Re-create another candidate and clear via bulk mode with query.
@@ -166,11 +214,42 @@ class DatabaseTests(unittest.TestCase):
                 channel=2,
                 rssi=-51,
             )
-            cleared = db.clear_novel_networks(window_hours=24, query="Novel-Bulk")
+            record_single_session(
+                bssid="AA:BB:CC:11:22:88",
+                ssid="Novel-Bulk-Two",
+                at=old,
+                frequency_mhz=2422,
+                channel=3,
+                rssi=-50,
+            )
+            record_single_session(
+                bssid="AA:BB:CC:11:22:88",
+                ssid="Novel-Bulk-Two",
+                at=old_plus_twenty_six,
+                frequency_mhz=2422,
+                channel=3,
+                rssi=-52,
+            )
+            cleared = db.clear_novel_networks(window_hours=24, max_sessions=1, query="Novel-Bulk")
             self.assertGreaterEqual(cleared, 1)
 
-            after_bulk_clear = db.list_novel_networks(window_hours=24, query="Novel-Bulk", limit=50, offset=0)
+            after_bulk_clear = db.list_novel_networks(
+                window_hours=24,
+                max_sessions=1,
+                query="Novel-Bulk",
+                limit=50,
+                offset=0,
+            )
             self.assertEqual(len(after_bulk_clear), 0)
+            remaining_bulk_two = db.list_novel_networks(
+                window_hours=24,
+                max_sessions=2,
+                query="Novel-Bulk",
+                limit=50,
+                offset=0,
+            )
+            self.assertEqual(len(remaining_bulk_two), 1)
+            self.assertEqual(remaining_bulk_two[0]["bssid"], "AA:BB:CC:11:22:88")
             db.close()
 
 

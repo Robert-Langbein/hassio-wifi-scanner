@@ -12,6 +12,7 @@ from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 
 from .constants import (
+    DEFAULT_NOVEL_MAX_SESSIONS,
     DEFAULT_SHORT_REPEAT_MAX_DURATION_SEC,
     DEFAULT_SHORT_REPEAT_MIN_REAPPEAR_COUNT,
     DEFAULT_SHORT_REPEAT_WINDOW_HOURS,
@@ -28,6 +29,26 @@ from .types import NetworkObservation, ScanConfig
 _SCAN_LOGGER = logging.getLogger("wifi_presence_scanner.scan")
 _RUNTIME_LOGGER = logging.getLogger("wifi_presence_scanner.runtime")
 DEFAULT_NOVEL_WINDOW_HOURS = 24
+
+
+def _parse_novel_window_hours(raw_value: object) -> int:
+    try:
+        window_hours = int(raw_value)
+    except (TypeError, ValueError) as err:
+        raise ValueError("'window_hours' must be an integer between 1 and 168") from err
+    if window_hours < 1 or window_hours > 168:
+        raise ValueError("'window_hours' must be between 1 and 168")
+    return window_hours
+
+
+def _parse_novel_max_sessions(raw_value: object) -> int:
+    try:
+        max_sessions = int(raw_value)
+    except (TypeError, ValueError) as err:
+        raise ValueError("'max_sessions' must be an integer greater than or equal to 1") from err
+    if max_sessions < 1:
+        raise ValueError("'max_sessions' must be greater than or equal to 1")
+    return max_sessions
 
 
 def _utc_now() -> datetime:
@@ -500,14 +521,14 @@ class ScannerService:
         return {"items": items, "limit": limit, "offset": offset}
 
     def list_novel_networks(self, *, params: dict[str, str]) -> dict[str, object]:
-        window_hours = int(params.get("window_hours", str(DEFAULT_NOVEL_WINDOW_HOURS)))
-        if window_hours < 1 or window_hours > 168:
-            raise ValueError("'window_hours' must be between 1 and 168")
+        window_hours = _parse_novel_window_hours(params.get("window_hours", str(DEFAULT_NOVEL_WINDOW_HOURS)))
+        max_sessions = _parse_novel_max_sessions(params.get("max_sessions", str(DEFAULT_NOVEL_MAX_SESSIONS)))
         query = params.get("query")
         limit = max(1, min(int(params.get("limit", "50")), 1000))
         offset = max(0, int(params.get("offset", "0")))
         items = self._db.list_novel_networks(
             window_hours=window_hours,
+            max_sessions=max_sessions,
             query=query,
             limit=limit,
             offset=offset,
@@ -515,6 +536,7 @@ class ScannerService:
         return {
             "items": items,
             "window_hours": window_hours,
+            "max_sessions": max_sessions,
             "query": query or "",
             "limit": limit,
             "offset": offset,
@@ -524,16 +546,20 @@ class ScannerService:
         clear_all_raw = payload.get("clear_all", False)
         clear_all = clear_all_raw is True or str(clear_all_raw).strip().lower() in {"1", "true", "yes"}
         if clear_all:
-            window_hours = int(payload.get("window_hours", DEFAULT_NOVEL_WINDOW_HOURS))
-            if window_hours < 1 or window_hours > 168:
-                raise ValueError("'window_hours' must be between 1 and 168")
+            window_hours = _parse_novel_window_hours(payload.get("window_hours", DEFAULT_NOVEL_WINDOW_HOURS))
+            max_sessions = _parse_novel_max_sessions(payload.get("max_sessions", DEFAULT_NOVEL_MAX_SESSIONS))
             query_raw = payload.get("query")
             query = str(query_raw).strip() if query_raw else None
-            cleared = self._db.clear_novel_networks(window_hours=window_hours, query=query)
+            cleared = self._db.clear_novel_networks(
+                window_hours=window_hours,
+                max_sessions=max_sessions,
+                query=query,
+            )
             return {
                 "cleared": cleared,
                 "mode": "all",
                 "window_hours": window_hours,
+                "max_sessions": max_sessions,
                 "query": query or "",
             }
 
