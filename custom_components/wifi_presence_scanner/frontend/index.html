@@ -4,20 +4,72 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>WiFi Presence Scanner</title>
-    <link rel="stylesheet" href="ui/styles.css" />
+    <script>
+      (function () {
+        function trimTrailingSlashes(value) {
+          return value.length > 1 ? value.replace(/\/+$/, "") : value;
+        }
+
+        var pathname = window.location.pathname || "/";
+        var normalizedPath = trimTrailingSlashes(pathname) || "/";
+        var apiBase = "/v1";
+        var staticBase = "/ui";
+
+        if (normalizedPath === "/api/wifi_presence_scanner/panel") {
+          apiBase = "/api/wifi_presence_scanner";
+          staticBase = "/api/wifi_presence_scanner_static";
+        } else {
+          var basePath = normalizedPath;
+          if (basePath.slice(-11) === "/index.html") {
+            basePath = basePath.slice(0, -11) || "/";
+          }
+          if (basePath === "/") {
+            basePath = "";
+          }
+          apiBase = basePath + "/v1";
+          staticBase = basePath + "/ui";
+        }
+
+        window.WPS_API_BASE = apiBase;
+        window.WPS_STATIC_BASE = staticBase;
+
+        var stylesheet = document.createElement("link");
+        stylesheet.rel = "stylesheet";
+        stylesheet.href = staticBase + "/styles.css";
+        document.head.appendChild(stylesheet);
+      })();
+    </script>
   </head>
-  <body>
-    <main class="app-shell">
+  <body data-busy="false">
+    <main id="appShell" class="app-shell" data-busy="false">
       <header class="app-header">
-        <div>
+        <div class="header-copy">
           <p class="eyebrow">Home Assistant WiFi Presence</p>
           <h1>WiFi Presence Scanner</h1>
+          <p class="header-subtitle">
+            Review nearby WiFi activity, keep scan health visible, and tune automation rules
+            without leaving Home Assistant.
+          </p>
         </div>
-        <div class="header-actions">
-          <span id="healthBadge" class="badge badge-neutral">Unknown</span>
-          <button id="refreshButton" type="button">Refresh</button>
-          <button id="forceScanButton" type="button">Force Scan</button>
-          <button id="purgeButton" type="button" class="danger">Purge</button>
+        <div class="header-side">
+          <div
+            id="actionStatus"
+            class="action-status"
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+            data-tone="neutral"
+            data-busy="false"
+          >
+            <span class="action-status-indicator" aria-hidden="true"></span>
+            <span id="actionStatusText">Ready.</span>
+          </div>
+          <div class="header-actions">
+            <span id="healthBadge" class="badge badge-neutral">Unknown</span>
+            <button id="refreshButton" type="button" class="ghost">Refresh</button>
+            <button id="forceScanButton" type="button">Force Scan</button>
+            <button id="purgeButton" type="button" class="danger">Purge</button>
+          </div>
         </div>
       </header>
 
@@ -82,9 +134,9 @@
         <div class="panel-head">
           <h2>Networks</h2>
           <div class="pager">
-            <button id="networksPrevButton" type="button">Prev</button>
+            <button id="networksPrevButton" type="button" class="ghost">Prev</button>
             <span id="networksPageLabel">Page 1</span>
-            <button id="networksNextButton" type="button">Next</button>
+            <button id="networksNextButton" type="button" class="ghost">Next</button>
           </div>
         </div>
         <div class="table-wrap">
@@ -129,8 +181,8 @@
           </label>
         </div>
         <p class="muted-note">
-          A network is listed when it has at most the configured total sessions and has aged past the configured window.
-          Cleared items stay hidden until database reset.
+          A network is listed when it has at most the configured total sessions and has aged past
+          the configured window. Cleared items stay hidden until database reset.
         </p>
         <div class="table-wrap">
           <table>
@@ -157,9 +209,9 @@
           <h2>Scan Runs</h2>
           <div class="panel-tools">
             <div class="pager">
-              <button id="runsPrevButton" type="button">Prev</button>
+              <button id="runsPrevButton" type="button" class="ghost">Prev</button>
               <span id="runsPageLabel">Page 1</span>
-              <button id="runsNextButton" type="button">Next</button>
+              <button id="runsNextButton" type="button" class="ghost">Next</button>
             </div>
             <button
               id="toggleRunsButton"
@@ -209,11 +261,18 @@
         </div>
         <div id="rulesHelpContent" class="help-box" hidden>
           <p>Use rules to identify interesting WiFi sources and trigger automations.</p>
-          <p>To use a rule in Home Assistant, create an automation with trigger type <strong>Event</strong> and event type <code>wifi_presence_scanner_rule_matched</code>.</p>
+          <p>
+            To use a rule in Home Assistant, create an automation with trigger type
+            <strong>Event</strong> and event type
+            <code>wifi_presence_scanner_rule_matched</code>.
+          </p>
           <ul>
             <li><strong>Name:</strong> Friendly label shown in events and UI.</li>
             <li><strong>SSID Regex:</strong> Pattern for SSID names, e.g. <code>^(DHL|UPS)</code>.</li>
-            <li><strong>BSSID Prefix CSV:</strong> Comma-separated vendor prefixes, e.g. <code>AA:BB:CC,11:22:33</code>.</li>
+            <li>
+              <strong>BSSID Prefix CSV:</strong> Comma-separated vendor prefixes, e.g.
+              <code>AA:BB:CC,11:22:33</code>.
+            </li>
             <li><strong>Min RSSI:</strong> Ignore weak detections below this signal level.</li>
             <li><strong>Cooldown:</strong> Seconds to suppress repeated rule-match events.</li>
           </ul>
@@ -229,7 +288,7 @@
             <li><code>Courier vendor prefix</code>: BSSID prefix <code>AA:BB:CC</code>, cooldown <code>90</code>.</li>
             <li><code>Street hotspot</code>: regex <code>mobile|hotspot</code>, min RSSI <code>-70</code>.</li>
           </ul>
-          <p>Tip: start strict, then relax regex/prefix filters if you miss detections.</p>
+          <p>Tip: start strict, then relax regex or prefix filters if you miss detections.</p>
         </div>
         <form id="ruleForm" class="rule-form">
           <label>
@@ -292,10 +351,16 @@
       </section>
     </main>
 
-    <aside id="runDrawer" class="drawer hidden" aria-hidden="true">
+    <aside
+      id="runDrawer"
+      class="drawer hidden"
+      aria-hidden="true"
+      role="dialog"
+      aria-labelledby="runDrawerTitle"
+    >
       <div class="drawer-head">
         <h3 id="runDrawerTitle">Scan Run</h3>
-        <button id="runDrawerClose" type="button">Close</button>
+        <button id="runDrawerClose" type="button" class="ghost">Close</button>
       </div>
       <pre id="runDetailOutput"></pre>
       <h4>Observations</h4>
@@ -316,14 +381,15 @@
       </div>
     </aside>
 
-    <div id="toast" class="toast hidden"></div>
+    <div id="toast" class="toast hidden" role="status" aria-live="polite" aria-atomic="true"></div>
 
     <script>
-      if (!window.WPS_API_BASE) {
-        const normalizedPath = window.location.pathname.replace(/\/+$/, "");
-        window.WPS_API_BASE = `${normalizedPath || ""}/v1`;
-      }
+      (function () {
+        var script = document.createElement("script");
+        script.src = (window.WPS_STATIC_BASE || "/ui") + "/app.js";
+        script.type = "module";
+        document.body.appendChild(script);
+      })();
     </script>
-    <script src="ui/app.js" type="module"></script>
   </body>
 </html>

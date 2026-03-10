@@ -1,9 +1,70 @@
-const API_BASE = window.WPS_API_BASE || "/v1";
 const STORAGE_SCAN_RUNS_COLLAPSED = "wps_scan_runs_collapsed";
 const STORAGE_HEALTH_COLLAPSED = "wps_health_collapsed";
 const STORAGE_RULES_HELP_COLLAPSED = "wps_rules_help_collapsed";
 const STORAGE_NOVEL_WINDOW_HOURS = "wps_novel_window_hours";
 const STORAGE_NOVEL_MAX_SESSIONS = "wps_novel_max_sessions";
+const TOAST_DURATION_MS = 2800;
+const THEME_VARIABLE_MAP = {
+  "--primary-color": "--wps-color-primary",
+  "--accent-color": "--wps-color-accent",
+  "--primary-background-color": "--wps-bg",
+  "--card-background-color": "--wps-surface-0",
+  "--secondary-background-color": "--wps-surface-1",
+  "--divider-color": "--wps-border",
+  "--primary-text-color": "--wps-text",
+  "--secondary-text-color": "--wps-muted",
+  "--error-color": "--wps-color-error",
+  "--success-color": "--wps-color-success",
+  "--warning-color": "--wps-color-warning",
+};
+
+function trimTrailingSlashes(value) {
+  if (!value) {
+    return "";
+  }
+  return value.length > 1 ? value.replace(/\/+$/, "") : value;
+}
+
+function resolveRuntimeConfig() {
+  const existingApiBase = trimTrailingSlashes(String(window.WPS_API_BASE || ""));
+  const existingStaticBase = trimTrailingSlashes(String(window.WPS_STATIC_BASE || ""));
+  if (existingApiBase || existingStaticBase) {
+    const apiBase = existingApiBase || "/v1";
+    const staticBase = existingStaticBase || "/ui";
+    window.WPS_API_BASE = apiBase;
+    window.WPS_STATIC_BASE = staticBase;
+    return { apiBase, staticBase };
+  }
+
+  const pathname = window.location.pathname || "/";
+  const normalizedPath = trimTrailingSlashes(pathname) || "/";
+  if (normalizedPath === "/api/wifi_presence_scanner/panel") {
+    window.WPS_API_BASE = "/api/wifi_presence_scanner";
+    window.WPS_STATIC_BASE = "/api/wifi_presence_scanner_static";
+    return {
+      apiBase: window.WPS_API_BASE,
+      staticBase: window.WPS_STATIC_BASE,
+    };
+  }
+
+  let basePath = normalizedPath;
+  if (basePath.endsWith("/index.html")) {
+    basePath = basePath.slice(0, -"/index.html".length) || "/";
+  }
+  if (basePath === "/") {
+    basePath = "";
+  }
+
+  window.WPS_API_BASE = `${basePath}/v1`;
+  window.WPS_STATIC_BASE = `${basePath}/ui`;
+  return {
+    apiBase: window.WPS_API_BASE,
+    staticBase: window.WPS_STATIC_BASE,
+  };
+}
+
+const runtimeConfig = resolveRuntimeConfig();
+const API_BASE = runtimeConfig.apiBase;
 
 function loadCollapsedPreference(storageKey, defaultValue) {
   try {
@@ -68,10 +129,15 @@ const state = {
     scanRunsCollapsed: loadCollapsedPreference(STORAGE_SCAN_RUNS_COLLAPSED, true),
     healthCollapsed: loadCollapsedPreference(STORAGE_HEALTH_COLLAPSED, true),
     rulesHelpCollapsed: loadCollapsedPreference(STORAGE_RULES_HELP_COLLAPSED, true),
+    pendingCount: 0,
+    toastTimer: 0,
   },
 };
 
 const elements = {
+  appShell: document.getElementById("appShell"),
+  actionStatus: document.getElementById("actionStatus"),
+  actionStatusText: document.getElementById("actionStatusText"),
   healthBadge: document.getElementById("healthBadge"),
   healthOutput: document.getElementById("healthOutput"),
   refreshButton: document.getElementById("refreshButton"),
@@ -117,10 +183,126 @@ const elements = {
   toast: document.getElementById("toast"),
 };
 
-function showToast(text) {
-  elements.toast.textContent = text;
+function setStatus(text, { tone = "neutral", busy = false } = {}) {
+  const message = String(text || "Ready.").trim() || "Ready.";
+  elements.actionStatus.dataset.tone = tone;
+  elements.actionStatus.dataset.busy = String(busy);
+  elements.actionStatusText.textContent = message;
+}
+
+function showToast(text, { tone = "info" } = {}) {
+  const message = String(text || "").trim();
+  if (!message) {
+    return;
+  }
+
+  if (state.ui.toastTimer) {
+    window.clearTimeout(state.ui.toastTimer);
+  }
+  elements.toast.textContent = message;
+  elements.toast.dataset.tone = tone;
   elements.toast.classList.remove("hidden");
-  window.setTimeout(() => elements.toast.classList.add("hidden"), 2200);
+  state.ui.toastTimer = window.setTimeout(() => {
+    elements.toast.classList.add("hidden");
+    elements.toast.dataset.tone = "info";
+  }, TOAST_DURATION_MS);
+}
+
+function setDocumentBusy(isBusy) {
+  document.body.dataset.busy = isBusy ? "true" : "false";
+  if (elements.appShell) {
+    elements.appShell.dataset.busy = String(isBusy);
+  }
+}
+
+function beginBusy(message) {
+  state.ui.pendingCount += 1;
+  setDocumentBusy(true);
+  setStatus(message, { tone: "loading", busy: true });
+}
+
+function endBusy() {
+  state.ui.pendingCount = Math.max(0, state.ui.pendingCount - 1);
+  if (state.ui.pendingCount === 0) {
+    setDocumentBusy(false);
+  }
+}
+
+function setButtonPending(button, pendingLabel) {
+  if (!button) {
+    return () => {};
+  }
+
+  const originalLabel = button.textContent;
+  const originalDisabled = button.disabled;
+  button.dataset.pending = "true";
+  button.setAttribute("aria-busy", "true");
+  button.disabled = true;
+  if (pendingLabel) {
+    button.textContent = pendingLabel;
+  }
+
+  return () => {
+    button.disabled = originalDisabled;
+    button.textContent = originalLabel;
+    button.removeAttribute("aria-busy");
+    delete button.dataset.pending;
+  };
+}
+
+function applyHomeAssistantTheme() {
+  const root = document.documentElement;
+  let sourceElement = root;
+  let linkedTheme = false;
+
+  try {
+    if (window.parent && window.parent !== window && window.parent.document?.documentElement) {
+      sourceElement = window.parent.document.documentElement;
+      linkedTheme = true;
+    }
+  } catch (_error) {
+    sourceElement = root;
+  }
+
+  const computed = window.getComputedStyle(sourceElement);
+  let applied = false;
+  Object.entries(THEME_VARIABLE_MAP).forEach(([sourceName, targetName]) => {
+    const value = computed.getPropertyValue(sourceName).trim();
+    if (!value) {
+      return;
+    }
+    root.style.setProperty(targetName, value);
+    applied = true;
+  });
+
+  root.dataset.haTheme = applied ? (linkedTheme ? "linked" : "local") : "fallback";
+}
+
+function watchHomeAssistantTheme() {
+  try {
+    if (!window.parent || window.parent === window) {
+      return;
+    }
+    const target = window.parent.document?.documentElement;
+    if (!target) {
+      return;
+    }
+    const observer = new MutationObserver(() => {
+      window.requestAnimationFrame(applyHomeAssistantTheme);
+    });
+    observer.observe(target, {
+      attributes: true,
+      attributeFilter: ["class", "style"],
+    });
+    if (window.parent.document.body) {
+      observer.observe(window.parent.document.body, {
+        attributes: true,
+        attributeFilter: ["class", "style"],
+      });
+    }
+  } catch (_error) {
+    // Ignore theme observation failures.
+  }
 }
 
 function endpoint(path) {
@@ -129,13 +311,121 @@ function endpoint(path) {
   return `${base}${suffix}`;
 }
 
-async function requestJson(path, init) {
-  const response = await fetch(endpoint(path), init);
-  if (!response.ok) {
-    const raw = await response.text();
-    throw new Error(`${response.status} ${raw}`);
+function extractErrorText(raw) {
+  const text = String(raw || "").trim();
+  if (!text) {
+    return "";
   }
-  return response.json();
+  if (!(text.startsWith("{") || text.startsWith("["))) {
+    return text;
+  }
+
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      if (typeof parsed.error === "string") {
+        return extractErrorText(parsed.error);
+      }
+      if (typeof parsed.message === "string") {
+        return extractErrorText(parsed.message);
+      }
+    }
+  } catch (_error) {
+    return text;
+  }
+  return text;
+}
+
+function sentence(text) {
+  const trimmed = String(text || "").trim();
+  if (!trimmed) {
+    return "Request failed.";
+  }
+  const normalized = trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+  return /[.!?]$/.test(normalized) ? normalized : `${normalized}.`;
+}
+
+function normalizeErrorMessage(error) {
+  let message = error instanceof Error ? error.message : String(error || "");
+  message = message.trim();
+  if (!message) {
+    return "Request failed.";
+  }
+
+  const responseStatusMatch = message.match(/^\d+\s+(.+)$/);
+  if (responseStatusMatch) {
+    message = responseStatusMatch[1];
+  }
+
+  message = message.replace(/^Backend HTTP \d+:\s*/i, "");
+  message = message.replace(/^Backend request failed:\s*/i, "");
+  message = message.replace(/^Backend response parse failed:\s*/i, "");
+  message = extractErrorText(message).replaceAll("'", "").trim();
+
+  const knownErrors = {
+    scan_in_progress: "A scan is already running.",
+    quiet_window: "The current quiet window prevents a manual scan.",
+    not_found: "The requested item no longer exists.",
+    integration_not_loaded: "The Home Assistant integration is not loaded.",
+    unauthorized: "Authentication with the scanner backend failed.",
+    forbidden: "The request is not allowed.",
+  };
+  if (knownErrors[message]) {
+    return knownErrors[message];
+  }
+
+  if (message.toLowerCase() === "failed to fetch") {
+    return "Could not reach the scanner backend.";
+  }
+  if (message.toLowerCase() === "backend response is not an object") {
+    return "The scanner backend returned an unexpected response.";
+  }
+
+  return sentence(message);
+}
+
+async function requestJson(path, init = {}) {
+  try {
+    const headers = new Headers(init.headers || {});
+    if (!headers.has("Accept")) {
+      headers.set("Accept", "application/json");
+    }
+
+    const response = await fetch(endpoint(path), {
+      ...init,
+      headers,
+    });
+    const raw = await response.text();
+    let payload = {};
+
+    if (raw) {
+      try {
+        payload = JSON.parse(raw);
+      } catch (_error) {
+        if (response.ok) {
+          throw new Error("The scanner backend returned invalid JSON.");
+        }
+      }
+    }
+
+    if (!response.ok) {
+      const source =
+        payload && typeof payload === "object" && !Array.isArray(payload)
+          ? payload.error || payload.message || raw
+          : raw;
+      throw new Error(normalizeErrorMessage(source || `${response.status} request failed`));
+    }
+
+    if (!raw) {
+      return {};
+    }
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      throw new Error("The scanner backend returned an unexpected response.");
+    }
+    return payload;
+  } catch (error) {
+    throw new Error(normalizeErrorMessage(error));
+  }
 }
 
 function toIso(value) {
@@ -172,6 +462,14 @@ function formatDuration(ms) {
     return `${ms} ms`;
   }
   return `${(ms / 1000).toFixed(2)} s`;
+}
+
+function formatRefreshTime() {
+  return new Date().toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
 }
 
 function normalizeWindowHours(value) {
@@ -277,15 +575,27 @@ function sortNetworks(items) {
 }
 
 function renderHealth() {
-  const health = state.health || {};
+  elements.kpiRules.textContent = String(state.rules.length);
+
+  if (!state.health) {
+    elements.healthBadge.textContent = "Unknown";
+    elements.healthBadge.classList.remove("badge-ok", "badge-error");
+    elements.healthBadge.classList.add("badge-neutral");
+    elements.kpiVisible.textContent = "-";
+    elements.kpiLastScan.textContent = "-";
+    elements.kpiError.textContent = "none";
+    elements.healthOutput.textContent = "Loading...";
+    return;
+  }
+
+  const health = state.health;
   const ok = Boolean(health.ok);
-  elements.healthBadge.textContent = ok ? "Healthy" : "Error";
+  elements.healthBadge.textContent = ok ? "Healthy" : "Needs Attention";
   elements.healthBadge.classList.remove("badge-neutral", "badge-ok", "badge-error");
   elements.healthBadge.classList.add(ok ? "badge-ok" : "badge-error");
 
   elements.kpiVisible.textContent = String(health.currently_visible ?? 0);
   elements.kpiLastScan.textContent = formatDate(health.last_scan_finished_at);
-  elements.kpiRules.textContent = String(state.rules.length);
   elements.kpiError.textContent = health.last_error ? String(health.last_error) : "none";
   elements.healthOutput.textContent = JSON.stringify(health, null, 2);
 }
@@ -339,19 +649,34 @@ function renderNovelNetworks() {
       <td>${item.currently_visible ? "yes" : "no"}</td>
       <td class="table-action-cell"></td>
     `;
-    const actionCell = row.querySelector(".table-action-cell");
+
     const clearButton = document.createElement("button");
     clearButton.type = "button";
     clearButton.className = "ghost";
     clearButton.textContent = "Clear";
-    clearButton.addEventListener("click", async () => {
-      try {
-        await clearNovelNetwork(item.bssid);
-      } catch (error) {
-        showToast(error.message);
-      }
+    clearButton.addEventListener("click", () => {
+      void runRequest({
+        button: clearButton,
+        pendingLabel: "Clearing...",
+        statusMessage: `Clearing rare network ${item.bssid}...`,
+        task: async () => {
+          const result = await requestJson("/novel-networks/clear", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ bssid: item.bssid }),
+          });
+          await loadNovelNetworks();
+          renderNovelNetworks();
+          return result;
+        },
+        successMessage: (result) => ({
+          tone: "success",
+          message: `Cleared rare network ${(result && result.bssid) || item.bssid}.`,
+        }),
+      });
     });
-    actionCell?.appendChild(clearButton);
+
+    row.querySelector(".table-action-cell")?.appendChild(clearButton);
     elements.novelBody.appendChild(row);
   });
 }
@@ -376,7 +701,9 @@ function renderRuns() {
       <td>${run.rule_matches}</td>
       <td>${escapeHtml(run.trigger || "-")}</td>
     `;
-    row.addEventListener("click", () => openRunDetail(run.id));
+    row.addEventListener("click", () => {
+      void openRunDetail(run.id);
+    });
     elements.runsBody.appendChild(row);
   });
 
@@ -394,36 +721,62 @@ function renderRules() {
 
   state.rules.forEach((rule) => {
     const row = document.createElement("tr");
-    const actions = document.createElement("td");
+    const actionsCell = document.createElement("td");
+    const actions = document.createElement("div");
+    actions.className = "table-action-group";
 
     const toggle = document.createElement("button");
     toggle.type = "button";
+    toggle.className = rule.enabled ? "ghost" : "";
     toggle.textContent = rule.enabled ? "Disable" : "Enable";
-    toggle.addEventListener("click", async () => {
-      await requestJson(`/rules/${rule.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled: !rule.enabled }),
+    toggle.addEventListener("click", () => {
+      const nextEnabled = !rule.enabled;
+      void runRequest({
+        button: toggle,
+        pendingLabel: nextEnabled ? "Enabling..." : "Disabling...",
+        statusMessage: `${nextEnabled ? "Enabling" : "Disabling"} rule "${rule.name}"...`,
+        task: async () => {
+          await requestJson(`/rules/${rule.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ enabled: nextEnabled }),
+          });
+          await loadRules();
+          renderRules();
+          renderHealth();
+        },
+        successMessage: {
+          tone: "success",
+          message: nextEnabled ? `Rule "${rule.name}" enabled.` : `Rule "${rule.name}" disabled.`,
+        },
       });
-      await loadRules();
-      renderRules();
-      showToast("Rule updated");
     });
 
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "danger";
     remove.textContent = "Delete";
-    remove.addEventListener("click", async () => {
-      await requestJson(`/rules/${rule.id}`, { method: "DELETE" });
-      await loadRules();
-      renderRules();
-      showToast("Rule deleted");
+    remove.addEventListener("click", () => {
+      void runRequest({
+        button: remove,
+        pendingLabel: "Deleting...",
+        statusMessage: `Deleting rule "${rule.name}"...`,
+        task: async () => {
+          await requestJson(`/rules/${rule.id}`, { method: "DELETE" });
+          await loadRules();
+          renderRules();
+          renderHealth();
+        },
+        successMessage: {
+          tone: "success",
+          message: `Rule "${rule.name}" deleted.`,
+        },
+      });
     });
 
     actions.appendChild(toggle);
-    actions.append(" ");
     actions.appendChild(remove);
+    actionsCell.appendChild(actions);
 
     row.innerHTML = `
       <td>${rule.id}</td>
@@ -435,7 +788,7 @@ function renderRules() {
       <td>${rule.cooldown_sec}</td>
     `;
 
-    row.appendChild(actions);
+    row.appendChild(actionsCell);
     elements.rulesBody.appendChild(row);
   });
 }
@@ -496,80 +849,233 @@ async function loadNovelNetworks() {
   state.novel.items = Array.isArray(payload.items) ? payload.items : [];
 }
 
-async function clearNovelNetwork(bssid) {
-  await requestJson("/novel-networks/clear", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ bssid }),
-  });
-  await loadNovelNetworks();
-  renderNovelNetworks();
-  showToast(`Cleared ${bssid}`);
-}
-
-async function clearAllNovelNetworks() {
-  const result = await requestJson("/novel-networks/clear", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      clear_all: true,
-      window_hours: state.novel.windowHours,
-      max_sessions: state.novel.maxSessions,
-      query: state.novel.query,
-    }),
-  });
-  await loadNovelNetworks();
-  renderNovelNetworks();
-  showToast(`Cleared ${result.cleared ?? 0} networks`);
-}
-
-async function openRunDetail(scanRunId) {
-  const [run, observations] = await Promise.all([
-    requestJson(`/scan-runs/${scanRunId}`),
-    requestJson(`/scan-runs/${scanRunId}/observations?limit=120&offset=0`),
-  ]);
-
-  elements.runDrawerTitle.textContent = `Scan Run #${scanRunId}`;
-  elements.runDetailOutput.textContent = JSON.stringify(run, null, 2);
-  elements.runObservationsBody.innerHTML = "";
-
-  const rows = Array.isArray(observations.items) ? observations.items : [];
-  if (rows.length === 0) {
-    const emptyMessage = run.raw_observations_available === false
-      ? "Raw observations expired"
-      : "No observations";
-    elements.runObservationsBody.innerHTML = `<tr><td colspan="6">${escapeHtml(emptyMessage)}</td></tr>`;
-  }
-
-  rows.forEach((item) => {
-    const row = document.createElement("tr");
-    row.innerHTML = `
-      <td>${escapeHtml(item.ssid || "<hidden>")}</td>
-      <td><code>${escapeHtml(item.bssid)}</code></td>
-      <td>${item.rssi}</td>
-      <td>${item.channel}</td>
-      <td>${frequencyBandLabel(item.frequency_mhz, item.channel)}</td>
-      <td>${formatDate(item.seen_at)}</td>
-    `;
-    elements.runObservationsBody.appendChild(row);
-  });
-
-  elements.runDrawer.classList.remove("hidden");
-  elements.runDrawer.setAttribute("aria-hidden", "false");
-}
-
-function closeRunDrawer() {
-  elements.runDrawer.classList.add("hidden");
-  elements.runDrawer.setAttribute("aria-hidden", "true");
-}
-
-async function refreshAll() {
+async function loadAllData() {
   await Promise.all([loadHealth(), loadRules(), loadNetworks(), loadRuns(), loadNovelNetworks()]);
+}
+
+function renderAll() {
   renderHealth();
   renderNetworks();
   renderNovelNetworks();
   renderRuns();
   renderRules();
+}
+
+function resolveSuccessFeedback(details, fallbackTone = "success") {
+  if (!details) {
+    return null;
+  }
+  if (typeof details === "string") {
+    return { tone: fallbackTone, message: details };
+  }
+  return {
+    tone: details.tone || fallbackTone,
+    message: String(details.message || "").trim(),
+  };
+}
+
+async function runRequest({
+  button = null,
+  pendingLabel = "",
+  statusMessage = "Working...",
+  task,
+  successMessage = null,
+  toastOnSuccess = true,
+  statusAfterSuccess = null,
+}) {
+  if (button?.dataset.pending === "true") {
+    return null;
+  }
+
+  const restoreButton = setButtonPending(button, pendingLabel);
+  beginBusy(statusMessage);
+
+  try {
+    const result = await task();
+    const success =
+      resolveSuccessFeedback(
+        typeof successMessage === "function" ? successMessage(result) : successMessage,
+      ) ||
+      (statusAfterSuccess
+        ? {
+            tone: "neutral",
+            message:
+              typeof statusAfterSuccess === "function"
+                ? statusAfterSuccess(result)
+                : statusAfterSuccess,
+          }
+        : null);
+
+    if (success?.message) {
+      setStatus(success.message, { tone: success.tone, busy: false });
+      if (toastOnSuccess) {
+        showToast(success.message, { tone: success.tone });
+      }
+    } else {
+      setStatus("Ready.", { tone: "neutral", busy: false });
+    }
+    return result;
+  } catch (error) {
+    const message = normalizeErrorMessage(error);
+    setStatus(message, { tone: "error", busy: false });
+    showToast(message, { tone: "error" });
+    return null;
+  } finally {
+    endBusy();
+    restoreButton();
+  }
+}
+
+function describeForceScanResult(result) {
+  if (!result || typeof result !== "object") {
+    return {
+      tone: "success",
+      message: "Manual scan request sent.",
+    };
+  }
+
+  if (result.status === "ok") {
+    return {
+      tone: "success",
+      message: `Manual scan finished: ${result.seen ?? 0} seen, ${result.new_count ?? 0} new, ${result.disappeared_count ?? 0} gone.`,
+    };
+  }
+
+  if (result.status === "skipped") {
+    if (result.reason === "scan_in_progress") {
+      return {
+        tone: "warning",
+        message: "Manual scan skipped because another scan is already running.",
+      };
+    }
+    if (result.reason === "quiet_window") {
+      return {
+        tone: "warning",
+        message: "Manual scan skipped because the quiet window is active.",
+      };
+    }
+    return {
+      tone: "warning",
+      message: "Manual scan was skipped.",
+    };
+  }
+
+  if (result.status === "error") {
+    return {
+      tone: "error",
+      message: normalizeErrorMessage(result.error || "Manual scan failed"),
+    };
+  }
+
+  return {
+    tone: "success",
+    message: "Manual scan request completed.",
+  };
+}
+
+function describePurgeResult(result) {
+  const totalDeleted = Object.values(result || {}).reduce((sum, value) => {
+    const count = Number(value);
+    return Number.isFinite(count) ? sum + count : sum;
+  }, 0);
+  if (totalDeleted <= 0) {
+    return {
+      tone: "warning",
+      message: "No history records needed purging.",
+    };
+  }
+  return {
+    tone: "success",
+    message: `Purged ${totalDeleted} history records.`,
+  };
+}
+
+async function refreshAll({
+  button = null,
+  pendingLabel = "",
+  statusMessage = "Refreshing scanner data...",
+} = {}) {
+  const result = await runRequest({
+    button,
+    pendingLabel,
+    statusMessage,
+    task: async () => {
+      await loadAllData();
+      renderAll();
+    },
+    toastOnSuccess: false,
+    statusAfterSuccess: `Updated ${formatRefreshTime()}.`,
+  });
+
+  if (result === null && !state.health) {
+    elements.healthOutput.textContent = "Unable to load scanner data.";
+  }
+  return result;
+}
+
+async function refreshNovelNetworksView({
+  button = null,
+  pendingLabel = "",
+  statusMessage = "Refreshing rare networks...",
+} = {}) {
+  return runRequest({
+    button,
+    pendingLabel,
+    statusMessage,
+    task: async () => {
+      await loadNovelNetworks();
+      renderNovelNetworks();
+    },
+    toastOnSuccess: false,
+    statusAfterSuccess: `Rare networks updated ${formatRefreshTime()}.`,
+  });
+}
+
+async function openRunDetail(scanRunId) {
+  return runRequest({
+    statusMessage: `Loading scan run #${scanRunId}...`,
+    task: async () => {
+      const [run, observations] = await Promise.all([
+        requestJson(`/scan-runs/${scanRunId}`),
+        requestJson(`/scan-runs/${scanRunId}/observations?limit=120&offset=0`),
+      ]);
+
+      elements.runDrawerTitle.textContent = `Scan Run #${scanRunId}`;
+      elements.runDetailOutput.textContent = JSON.stringify(run, null, 2);
+      elements.runObservationsBody.innerHTML = "";
+
+      const rows = Array.isArray(observations.items) ? observations.items : [];
+      if (rows.length === 0) {
+        const emptyMessage =
+          run.raw_observations_available === false ? "Raw observations expired" : "No observations";
+        elements.runObservationsBody.innerHTML = `<tr><td colspan="6">${escapeHtml(emptyMessage)}</td></tr>`;
+      }
+
+      rows.forEach((item) => {
+        const row = document.createElement("tr");
+        row.innerHTML = `
+          <td>${escapeHtml(item.ssid || "<hidden>")}</td>
+          <td><code>${escapeHtml(item.bssid)}</code></td>
+          <td>${item.rssi}</td>
+          <td>${item.channel}</td>
+          <td>${frequencyBandLabel(item.frequency_mhz, item.channel)}</td>
+          <td>${formatDate(item.seen_at)}</td>
+        `;
+        elements.runObservationsBody.appendChild(row);
+      });
+
+      elements.runDrawer.classList.remove("hidden");
+      elements.runDrawer.setAttribute("aria-hidden", "false");
+    },
+    toastOnSuccess: false,
+    statusAfterSuccess: `Loaded scan run #${scanRunId}.`,
+  });
+}
+
+function closeRunDrawer() {
+  elements.runDrawer.classList.add("hidden");
+  elements.runDrawer.setAttribute("aria-hidden", "true");
+  setStatus(`Updated ${formatRefreshTime()}.`, { tone: "neutral", busy: false });
 }
 
 function bindEvents() {
@@ -596,35 +1102,83 @@ function bindEvents() {
   });
 
   elements.refreshButton.addEventListener("click", () => {
-    refreshAll().catch((error) => showToast(error.message));
+    void refreshAll({
+      button: elements.refreshButton,
+      pendingLabel: "Refreshing...",
+      statusMessage: "Refreshing scanner data...",
+    });
   });
 
-  elements.novelRefreshButton.addEventListener("click", async () => {
+  elements.novelRefreshButton.addEventListener("click", () => {
     state.novel.query = elements.novelQueryInput.value.trim();
     updateNovelWindowPreference(elements.novelWindowInput.value);
     updateNovelMaxSessionsPreference(elements.novelMaxSessionsInput.value);
     state.novel.offset = 0;
-    await loadNovelNetworks();
-    renderNovelNetworks();
+    void refreshNovelNetworksView({
+      button: elements.novelRefreshButton,
+      pendingLabel: "Refreshing...",
+      statusMessage: "Refreshing rare networks...",
+    });
   });
 
-  elements.novelClearAllButton.addEventListener("click", async () => {
+  elements.novelClearAllButton.addEventListener("click", () => {
     if (!window.confirm("Clear all currently listed rare networks?")) {
       return;
     }
-    await clearAllNovelNetworks();
+    void runRequest({
+      button: elements.novelClearAllButton,
+      pendingLabel: "Clearing...",
+      statusMessage: "Clearing rare networks...",
+      task: async () => {
+        const result = await requestJson("/novel-networks/clear", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            clear_all: true,
+            window_hours: state.novel.windowHours,
+            max_sessions: state.novel.maxSessions,
+            query: state.novel.query,
+          }),
+        });
+        await loadNovelNetworks();
+        renderNovelNetworks();
+        return result;
+      },
+      successMessage: (result) => ({
+        tone: "success",
+        message: `Cleared ${result?.cleared ?? 0} rare networks.`,
+      }),
+    });
   });
 
-  elements.forceScanButton.addEventListener("click", async () => {
-    await requestJson("/scan/trigger", { method: "POST" });
-    showToast("Force scan triggered");
-    await refreshAll();
+  elements.forceScanButton.addEventListener("click", () => {
+    void runRequest({
+      button: elements.forceScanButton,
+      pendingLabel: "Scanning...",
+      statusMessage: "Running a manual scan...",
+      task: async () => {
+        const result = await requestJson("/scan/trigger", { method: "POST" });
+        await loadAllData();
+        renderAll();
+        return result;
+      },
+      successMessage: describeForceScanResult,
+    });
   });
 
-  elements.purgeButton.addEventListener("click", async () => {
-    await requestJson("/history/purge", { method: "POST" });
-    showToast("History purge started");
-    await refreshAll();
+  elements.purgeButton.addEventListener("click", () => {
+    void runRequest({
+      button: elements.purgeButton,
+      pendingLabel: "Purging...",
+      statusMessage: "Purging historical scanner data...",
+      task: async () => {
+        const result = await requestJson("/history/purge", { method: "POST" });
+        await loadAllData();
+        renderAll();
+        return result;
+      },
+      successMessage: describePurgeResult,
+    });
   });
 
   [
@@ -638,32 +1192,34 @@ function bindEvents() {
     input.addEventListener("change", () => {
       state.networks.offset = 0;
       state.runs.offset = 0;
-      refreshAll().catch((error) => showToast(error.message));
+      void refreshAll({
+        statusMessage: "Applying filters...",
+      });
     });
   });
 
   elements.novelWindowInput.addEventListener("change", () => {
     updateNovelWindowPreference(elements.novelWindowInput.value);
     state.novel.offset = 0;
-    loadNovelNetworks()
-      .then(() => renderNovelNetworks())
-      .catch((error) => showToast(error.message));
+    void refreshNovelNetworksView({
+      statusMessage: "Applying rare network filters...",
+    });
   });
 
   elements.novelMaxSessionsInput.addEventListener("change", () => {
     updateNovelMaxSessionsPreference(elements.novelMaxSessionsInput.value);
     state.novel.offset = 0;
-    loadNovelNetworks()
-      .then(() => renderNovelNetworks())
-      .catch((error) => showToast(error.message));
+    void refreshNovelNetworksView({
+      statusMessage: "Applying rare network filters...",
+    });
   });
 
   elements.novelQueryInput.addEventListener("change", () => {
     state.novel.query = elements.novelQueryInput.value.trim();
     state.novel.offset = 0;
-    loadNovelNetworks()
-      .then(() => renderNovelNetworks())
-      .catch((error) => showToast(error.message));
+    void refreshNovelNetworksView({
+      statusMessage: "Applying rare network filters...",
+    });
   });
 
   elements.novelQueryInput.addEventListener("keydown", (event) => {
@@ -673,29 +1229,45 @@ function bindEvents() {
     event.preventDefault();
     state.novel.query = elements.novelQueryInput.value.trim();
     state.novel.offset = 0;
-    loadNovelNetworks()
-      .then(() => renderNovelNetworks())
-      .catch((error) => showToast(error.message));
+    void refreshNovelNetworksView({
+      statusMessage: "Applying rare network filters...",
+    });
   });
 
   elements.networksPrevButton.addEventListener("click", () => {
     state.networks.offset = Math.max(0, state.networks.offset - state.networks.limit);
-    refreshAll().catch((error) => showToast(error.message));
+    void refreshAll({
+      button: elements.networksPrevButton,
+      pendingLabel: "Loading...",
+      statusMessage: "Loading previous networks page...",
+    });
   });
 
   elements.networksNextButton.addEventListener("click", () => {
     state.networks.offset += state.networks.limit;
-    refreshAll().catch((error) => showToast(error.message));
+    void refreshAll({
+      button: elements.networksNextButton,
+      pendingLabel: "Loading...",
+      statusMessage: "Loading next networks page...",
+    });
   });
 
   elements.runsPrevButton.addEventListener("click", () => {
     state.runs.offset = Math.max(0, state.runs.offset - state.runs.limit);
-    refreshAll().catch((error) => showToast(error.message));
+    void refreshAll({
+      button: elements.runsPrevButton,
+      pendingLabel: "Loading...",
+      statusMessage: "Loading previous scan runs...",
+    });
   });
 
   elements.runsNextButton.addEventListener("click", () => {
     state.runs.offset += state.runs.limit;
-    refreshAll().catch((error) => showToast(error.message));
+    void refreshAll({
+      button: elements.runsNextButton,
+      pendingLabel: "Loading...",
+      statusMessage: "Loading next scan runs...",
+    });
   });
 
   document.querySelectorAll("th[data-sort]").forEach((header) => {
@@ -711,36 +1283,54 @@ function bindEvents() {
         state.networks.sortDirection = "asc";
       }
       renderNetworks();
+      setStatus(`Sorted networks by ${key.replaceAll("_", " ")}.`, { tone: "neutral", busy: false });
     });
   });
 
-  elements.ruleForm.addEventListener("submit", async (event) => {
+  elements.ruleForm.addEventListener("submit", (event) => {
     event.preventDefault();
-    const formData = new FormData(elements.ruleForm);
-    const payload = {
-      name: String(formData.get("name") || "").trim(),
-      enabled: true,
-      ssid_regex: String(formData.get("ssid_regex") || "").trim() || null,
-      bssid_prefix_csv: String(formData.get("bssid_prefix_csv") || "").trim() || null,
-      min_rssi: formData.get("min_rssi") ? Number(formData.get("min_rssi")) : null,
-      cooldown_sec: Number(formData.get("cooldown_sec") || 0),
-    };
-    await requestJson("/rules", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+    const submitButton = elements.ruleForm.querySelector('button[type="submit"]');
+    void runRequest({
+      button: submitButton,
+      pendingLabel: "Creating...",
+      statusMessage: "Creating a new rule...",
+      task: async () => {
+        const formData = new FormData(elements.ruleForm);
+        const payload = {
+          name: String(formData.get("name") || "").trim(),
+          enabled: true,
+          ssid_regex: String(formData.get("ssid_regex") || "").trim() || null,
+          bssid_prefix_csv: String(formData.get("bssid_prefix_csv") || "").trim() || null,
+          min_rssi: formData.get("min_rssi") ? Number(formData.get("min_rssi")) : null,
+          cooldown_sec: Number(formData.get("cooldown_sec") || 0),
+        };
+        const result = await requestJson("/rules", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        elements.ruleForm.reset();
+        await loadRules();
+        renderRules();
+        renderHealth();
+        return result;
+      },
+      successMessage: (result) => ({
+        tone: "success",
+        message: `Rule "${result?.name || "new rule"}" created.`,
+      }),
     });
-    elements.ruleForm.reset();
-    showToast("Rule created");
-    await refreshAll();
   });
 
   elements.runDrawerClose.addEventListener("click", closeRunDrawer);
 }
 
+applyHomeAssistantTheme();
+watchHomeAssistantTheme();
 bindEvents();
 applyCollapseState();
-refreshAll().catch((error) => {
-  showToast(error.message);
-  elements.healthOutput.textContent = error.message;
+renderHealth();
+setStatus("Loading scanner data...", { tone: "loading", busy: true });
+void refreshAll({
+  statusMessage: "Loading scanner data...",
 });

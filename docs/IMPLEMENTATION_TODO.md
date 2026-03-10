@@ -39,6 +39,7 @@
 - [x] Add collapsible Scan Runs/Health sections with persisted UI state.
 - [x] Add Rules guidance panel in UI and switch visual theme to neutral gray full-width layout.
 - [x] Add rare networks card with configurable time window, max-session threshold, and persistent manual clear list.
+- [x] Add centralized button busy states, visible action feedback, and theme-aware UI polish across shared static frontends.
 
 ## Home Assistant integration
 - [x] Create custom integration domain `wifi_presence_scanner`.
