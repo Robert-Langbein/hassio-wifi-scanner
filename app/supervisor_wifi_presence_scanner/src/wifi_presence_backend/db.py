@@ -34,7 +34,8 @@ class Database:
     def __init__(self, db_path: str) -> None:
         self._db_path = db_path
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
+        self._tx_state = threading.local()
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode = WAL")
@@ -48,13 +49,209 @@ class Database:
 
     @contextmanager
     def _tx(self) -> Iterator[sqlite3.Connection]:
+        depth = getattr(self._tx_state, "depth", 0)
+        if depth > 0:
+            self._tx_state.depth = depth + 1
+            try:
+                yield self._conn
+            finally:
+                self._tx_state.depth = depth
+            return
+
         with self._lock:
+            self._tx_state.depth = 1
             try:
                 yield self._conn
                 self._conn.commit()
             except Exception:
                 self._conn.rollback()
                 raise
+            finally:
+                self._tx_state.depth = 0
+
+    @contextmanager
+    def transaction(self) -> Iterator[sqlite3.Connection]:
+        with self._tx() as conn:
+            yield conn
+
+    def _rebuild_network_catalog(self, *, conn: sqlite3.Connection) -> None:
+        conn.execute("DROP TABLE IF EXISTS temp.network_catalog_backup")
+        conn.execute(
+            """
+            CREATE TEMP TABLE network_catalog_backup AS
+            SELECT *
+            FROM network_catalog
+            """
+        )
+        conn.execute("DELETE FROM network_catalog")
+        conn.execute(
+            """
+            WITH
+            session_agg AS (
+                SELECT
+                    bssid,
+                    MIN(first_seen) AS first_seen,
+                    MAX(last_seen) AS last_seen,
+                    SUM(scans_seen) AS total_seen_count,
+                    COUNT(*) AS total_sessions
+                FROM presence_sessions
+                GROUP BY bssid
+            ),
+            latest_session AS (
+                SELECT bssid, ssid
+                FROM (
+                    SELECT
+                        bssid,
+                        ssid,
+                        ROW_NUMBER() OVER (PARTITION BY bssid ORDER BY last_seen DESC, id DESC) AS rn
+                    FROM presence_sessions
+                )
+                WHERE rn = 1
+            ),
+            observation_agg AS (
+                SELECT
+                    bssid,
+                    MIN(seen_at) AS first_seen_obs,
+                    MAX(seen_at) AS last_seen_obs,
+                    MAX(rssi) AS strongest_rssi
+                FROM network_observations
+                GROUP BY bssid
+            ),
+            latest_observation AS (
+                SELECT bssid, ssid, bssid_hash, oui_vendor, rssi, channel, frequency_mhz
+                FROM (
+                    SELECT
+                        bssid,
+                        ssid,
+                        bssid_hash,
+                        oui_vendor,
+                        rssi,
+                        channel,
+                        frequency_mhz,
+                        seen_at,
+                        id,
+                        ROW_NUMBER() OVER (PARTITION BY bssid ORDER BY seen_at DESC, id DESC) AS rn
+                    FROM network_observations
+                )
+                WHERE rn = 1
+            ),
+            known_bssids AS (
+                SELECT bssid FROM presence_sessions
+                UNION
+                SELECT bssid FROM network_observations
+                UNION
+                SELECT bssid FROM active_networks
+            )
+            INSERT INTO network_catalog(
+                bssid,
+                ssid,
+                bssid_hash,
+                oui_vendor,
+                first_seen,
+                last_seen,
+                total_seen_count,
+                total_sessions,
+                strongest_rssi,
+                last_rssi,
+                last_channel,
+                last_frequency_mhz
+            )
+            SELECT
+                kb.bssid,
+                COALESCE(a.ssid, lo.ssid, ls.ssid, b.ssid, '') AS ssid,
+                COALESCE(a.bssid_hash, lo.bssid_hash, b.bssid_hash) AS bssid_hash,
+                COALESCE(a.oui_vendor, lo.oui_vendor, b.oui_vendor) AS oui_vendor,
+                COALESCE(sa.first_seen, a.first_seen, oa.first_seen_obs, b.first_seen) AS first_seen,
+                COALESCE(a.last_seen, sa.last_seen, oa.last_seen_obs, b.last_seen) AS last_seen,
+                COALESCE(sa.total_seen_count, a.seen_count, b.total_seen_count, 0) AS total_seen_count,
+                COALESCE(sa.total_sessions, CASE WHEN a.bssid IS NOT NULL THEN 1 ELSE NULL END, b.total_sessions, 0) AS total_sessions,
+                CASE
+                    WHEN oa.strongest_rssi IS NULL AND a.last_rssi IS NULL THEN b.strongest_rssi
+                    WHEN oa.strongest_rssi IS NULL THEN a.last_rssi
+                    WHEN a.last_rssi IS NULL THEN oa.strongest_rssi
+                    ELSE MAX(oa.strongest_rssi, a.last_rssi)
+                END AS strongest_rssi,
+                COALESCE(a.last_rssi, lo.rssi, b.last_rssi) AS last_rssi,
+                COALESCE(a.last_channel, lo.channel, b.last_channel) AS last_channel,
+                COALESCE(a.last_frequency_mhz, lo.frequency_mhz, b.last_frequency_mhz) AS last_frequency_mhz
+            FROM known_bssids kb
+            LEFT JOIN session_agg sa ON sa.bssid = kb.bssid
+            LEFT JOIN latest_session ls ON ls.bssid = kb.bssid
+            LEFT JOIN observation_agg oa ON oa.bssid = kb.bssid
+            LEFT JOIN latest_observation lo ON lo.bssid = kb.bssid
+            LEFT JOIN active_networks a ON a.bssid = kb.bssid
+            LEFT JOIN network_catalog_backup b ON b.bssid = kb.bssid
+            WHERE COALESCE(sa.first_seen, a.first_seen, oa.first_seen_obs, b.first_seen) IS NOT NULL
+            """
+        )
+        conn.execute("DROP TABLE IF EXISTS temp.network_catalog_backup")
+
+    def _upsert_network_catalog(
+        self,
+        *,
+        conn: sqlite3.Connection,
+        bssid: str,
+        ssid: str,
+        timestamp_iso: str,
+        rssi: int,
+        channel: int,
+        frequency_mhz: int,
+        bssid_hash: str | None,
+        oui_vendor: str | None,
+        session_delta: int,
+    ) -> None:
+        conn.execute(
+            """
+            INSERT INTO network_catalog(
+                bssid,
+                ssid,
+                bssid_hash,
+                oui_vendor,
+                first_seen,
+                last_seen,
+                total_seen_count,
+                total_sessions,
+                strongest_rssi,
+                last_rssi,
+                last_channel,
+                last_frequency_mhz
+            ) VALUES(?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
+            ON CONFLICT(bssid) DO UPDATE SET
+                ssid = excluded.ssid,
+                bssid_hash = COALESCE(excluded.bssid_hash, network_catalog.bssid_hash),
+                oui_vendor = COALESCE(excluded.oui_vendor, network_catalog.oui_vendor),
+                first_seen = CASE
+                    WHEN network_catalog.first_seen <= excluded.first_seen THEN network_catalog.first_seen
+                    ELSE excluded.first_seen
+                END,
+                last_seen = excluded.last_seen,
+                total_seen_count = network_catalog.total_seen_count + 1,
+                total_sessions = network_catalog.total_sessions + ?,
+                strongest_rssi = CASE
+                    WHEN network_catalog.strongest_rssi IS NULL THEN excluded.strongest_rssi
+                    WHEN excluded.strongest_rssi IS NULL THEN network_catalog.strongest_rssi
+                    WHEN network_catalog.strongest_rssi >= excluded.strongest_rssi THEN network_catalog.strongest_rssi
+                    ELSE excluded.strongest_rssi
+                END,
+                last_rssi = excluded.last_rssi,
+                last_channel = excluded.last_channel,
+                last_frequency_mhz = excluded.last_frequency_mhz
+            """,
+            (
+                bssid,
+                ssid,
+                bssid_hash,
+                oui_vendor,
+                timestamp_iso,
+                timestamp_iso,
+                1,
+                rssi,
+                rssi,
+                channel,
+                frequency_mhz,
+                session_delta,
+            ),
+        )
 
     def migrate(self) -> None:
         with self._tx() as conn:
@@ -119,6 +316,21 @@ class Database:
                     oui_vendor TEXT
                 );
 
+                CREATE TABLE IF NOT EXISTS network_catalog (
+                    bssid TEXT PRIMARY KEY,
+                    ssid TEXT NOT NULL,
+                    bssid_hash TEXT,
+                    oui_vendor TEXT,
+                    first_seen TEXT NOT NULL,
+                    last_seen TEXT NOT NULL,
+                    total_seen_count INTEGER NOT NULL,
+                    total_sessions INTEGER NOT NULL,
+                    strongest_rssi INTEGER,
+                    last_rssi INTEGER,
+                    last_channel INTEGER,
+                    last_frequency_mhz INTEGER
+                );
+
                 CREATE TABLE IF NOT EXISTS fingerprint_rules (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT NOT NULL,
@@ -159,6 +371,8 @@ class Database:
                 CREATE INDEX IF NOT EXISTS idx_network_observations_bssid ON network_observations(bssid);
                 CREATE INDEX IF NOT EXISTS idx_presence_sessions_last_seen ON presence_sessions(last_seen);
                 CREATE INDEX IF NOT EXISTS idx_presence_sessions_bssid_first_seen ON presence_sessions(bssid, first_seen);
+                CREATE INDEX IF NOT EXISTS idx_network_catalog_last_seen ON network_catalog(last_seen);
+                CREATE INDEX IF NOT EXISTS idx_network_catalog_total_sessions ON network_catalog(total_sessions);
                 CREATE INDEX IF NOT EXISTS idx_rule_matches_matched_at ON rule_matches(matched_at);
                 CREATE INDEX IF NOT EXISTS idx_rule_matches_rule_id ON rule_matches(rule_id);
                 CREATE INDEX IF NOT EXISTS idx_emitted_events_created_at ON emitted_events(created_at);
@@ -187,6 +401,14 @@ class Database:
             if cur.fetchone()["cnt"] == 0:
                 conn.execute(
                     "INSERT INTO schema_migrations(version, applied_at) VALUES(1, ?)",
+                    (_utc_now_iso(),),
+                )
+
+            cur = conn.execute("SELECT COUNT(*) AS cnt FROM schema_migrations WHERE version = 2")
+            if cur.fetchone()["cnt"] == 0:
+                self._rebuild_network_catalog(conn=conn)
+                conn.execute(
+                    "INSERT INTO schema_migrations(version, applied_at) VALUES(2, ?)",
                     (_utc_now_iso(),),
                 )
 
@@ -338,6 +560,18 @@ class Database:
                         oui_vendor,
                     ),
                 )
+                self._upsert_network_catalog(
+                    conn=conn,
+                    bssid=bssid,
+                    ssid=ssid,
+                    timestamp_iso=timestamp_iso,
+                    rssi=rssi,
+                    channel=channel,
+                    frequency_mhz=frequency_mhz,
+                    bssid_hash=bssid_hash,
+                    oui_vendor=oui_vendor,
+                    session_delta=1,
+                )
                 row = conn.execute(
                     "SELECT * FROM active_networks WHERE bssid = ?", (bssid,)
                 ).fetchone()
@@ -391,6 +625,18 @@ class Database:
                     seen_count,
                     existing["session_id"],
                 ),
+            )
+            self._upsert_network_catalog(
+                conn=conn,
+                bssid=bssid,
+                ssid=ssid,
+                timestamp_iso=timestamp_iso,
+                rssi=rssi,
+                channel=channel,
+                frequency_mhz=frequency_mhz,
+                bssid_hash=bssid_hash,
+                oui_vendor=oui_vendor,
+                session_delta=0,
             )
             row = conn.execute("SELECT * FROM active_networks WHERE bssid = ?", (bssid,)).fetchone()
             return False, dict(row)
@@ -614,21 +860,6 @@ class Database:
             where_clause = "WHERE " + " AND ".join(where_parts)
 
         sql = f"""
-            WITH network_summary AS (
-                SELECT
-                    o.bssid AS bssid,
-                    MAX(o.ssid) AS ssid,
-                    MAX(o.bssid_hash) AS bssid_hash,
-                    MAX(o.oui_vendor) AS oui_vendor,
-                    MIN(o.seen_at) AS first_seen,
-                    MAX(o.seen_at) AS last_seen,
-                    COUNT(*) AS seen_count,
-                    MAX(o.rssi) AS strongest_rssi,
-                    (SELECT o2.channel FROM network_observations o2 WHERE o2.bssid = o.bssid ORDER BY o2.seen_at DESC LIMIT 1) AS channel,
-                    (SELECT o2.frequency_mhz FROM network_observations o2 WHERE o2.bssid = o.bssid ORDER BY o2.seen_at DESC LIMIT 1) AS frequency_mhz
-                FROM network_observations o
-                GROUP BY o.bssid
-            )
             SELECT
                 n.bssid,
                 n.bssid_hash,
@@ -636,12 +867,12 @@ class Database:
                 n.oui_vendor,
                 n.first_seen,
                 n.last_seen,
-                n.seen_count,
+                n.total_seen_count AS seen_count,
                 n.strongest_rssi,
-                n.channel,
-                n.frequency_mhz,
+                n.last_channel AS channel,
+                n.last_frequency_mhz AS frequency_mhz,
                 EXISTS (SELECT 1 FROM active_networks a WHERE a.bssid = n.bssid) AS currently_visible
-            FROM network_summary n
+            FROM network_catalog n
             {where_clause}
             ORDER BY n.last_seen DESC
             LIMIT ? OFFSET ?
@@ -663,54 +894,33 @@ class Database:
     ) -> list[dict[str, Any]]:
         window_days = window_hours / 24.0
         where_parts: list[str] = [
-            "sc.total_sessions <= ?",
-            "julianday('now') >= julianday(sc.first_seen_global) + ?",
+            "n.total_sessions <= ?",
+            "julianday('now') >= julianday(n.first_seen) + ?",
             "nc.bssid IS NULL",
         ]
         args: list[Any] = [max_sessions, window_days]
         if query:
             like = f"%{query}%"
-            where_parts.append("(coalesce(lo.ssid, '') LIKE ? OR sc.bssid LIKE ? OR coalesce(lo.oui_vendor, '') LIKE ?)")
+            where_parts.append("(coalesce(n.ssid, '') LIKE ? OR n.bssid LIKE ? OR coalesce(n.oui_vendor, '') LIKE ?)")
             args.extend([like, like, like])
 
         where_clause = "WHERE " + " AND ".join(where_parts)
         sql = f"""
-            WITH session_counts AS (
-                SELECT
-                    bssid,
-                    MIN(first_seen) AS first_seen_global,
-                    COUNT(id) AS total_sessions
-                FROM presence_sessions
-                GROUP BY bssid
-            ),
-            latest_observation AS (
-                SELECT
-                    o.bssid,
-                    MAX(o.ssid) AS ssid,
-                    MAX(o.oui_vendor) AS oui_vendor,
-                    MAX(o.seen_at) AS last_seen,
-                    MAX(o.rssi) AS strongest_rssi,
-                    (SELECT o2.channel FROM network_observations o2 WHERE o2.bssid = o.bssid ORDER BY o2.seen_at DESC LIMIT 1) AS channel,
-                    (SELECT o2.frequency_mhz FROM network_observations o2 WHERE o2.bssid = o.bssid ORDER BY o2.seen_at DESC LIMIT 1) AS frequency_mhz
-                FROM network_observations o
-                GROUP BY o.bssid
-            )
             SELECT
-                sc.bssid,
-                coalesce(lo.ssid, '') AS ssid,
-                lo.oui_vendor,
-                sc.first_seen_global AS first_seen,
-                lo.last_seen,
-                lo.strongest_rssi,
-                lo.channel,
-                lo.frequency_mhz,
-                lo.last_seen AS seen_at,
-                EXISTS (SELECT 1 FROM active_networks a WHERE a.bssid = sc.bssid) AS currently_visible
-            FROM session_counts sc
-            LEFT JOIN latest_observation lo ON lo.bssid = sc.bssid
-            LEFT JOIN novel_network_clears nc ON nc.bssid = sc.bssid
+                n.bssid,
+                n.ssid,
+                n.oui_vendor,
+                n.first_seen,
+                n.last_seen,
+                n.strongest_rssi,
+                n.last_channel AS channel,
+                n.last_frequency_mhz AS frequency_mhz,
+                n.last_seen AS seen_at,
+                EXISTS (SELECT 1 FROM active_networks a WHERE a.bssid = n.bssid) AS currently_visible
+            FROM network_catalog n
+            LEFT JOIN novel_network_clears nc ON nc.bssid = n.bssid
             {where_clause}
-            ORDER BY sc.first_seen_global DESC
+            ORDER BY n.first_seen DESC
             LIMIT ? OFFSET ?
         """
         args.extend([limit, offset])
@@ -732,39 +942,22 @@ class Database:
     def clear_novel_networks(self, *, window_hours: int, max_sessions: int, query: str | None) -> int:
         window_days = window_hours / 24.0
         where_parts: list[str] = [
-            "sc.total_sessions <= ?",
-            "julianday('now') >= julianday(sc.first_seen_global) + ?",
+            "n.total_sessions <= ?",
+            "julianday('now') >= julianday(n.first_seen) + ?",
             "nc.bssid IS NULL",
         ]
         args: list[Any] = [max_sessions, window_days]
         if query:
             like = f"%{query}%"
-            where_parts.append("(coalesce(lo.ssid, '') LIKE ? OR sc.bssid LIKE ? OR coalesce(lo.oui_vendor, '') LIKE ?)")
+            where_parts.append("(coalesce(n.ssid, '') LIKE ? OR n.bssid LIKE ? OR coalesce(n.oui_vendor, '') LIKE ?)")
             args.extend([like, like, like])
 
         where_clause = "WHERE " + " AND ".join(where_parts)
         sql = f"""
-            WITH session_counts AS (
-                SELECT
-                    bssid,
-                    MIN(first_seen) AS first_seen_global,
-                    COUNT(id) AS total_sessions
-                FROM presence_sessions
-                GROUP BY bssid
-            ),
-            latest_observation AS (
-                SELECT
-                    o.bssid,
-                    MAX(o.ssid) AS ssid,
-                    MAX(o.oui_vendor) AS oui_vendor
-                FROM network_observations o
-                GROUP BY o.bssid
-            ),
-            candidates AS (
-                SELECT sc.bssid
-                FROM session_counts sc
-                LEFT JOIN latest_observation lo ON lo.bssid = sc.bssid
-                LEFT JOIN novel_network_clears nc ON nc.bssid = sc.bssid
+            WITH candidates AS (
+                SELECT n.bssid
+                FROM network_catalog n
+                LEFT JOIN novel_network_clears nc ON nc.bssid = n.bssid
                 {where_clause}
             )
             INSERT OR REPLACE INTO novel_network_clears(bssid, cleared_at)
@@ -819,19 +1012,29 @@ class Database:
             ).fetchall()
             return [dict(row) for row in rows]
 
-    def purge_history(self, *, retention_days: int) -> dict[str, int]:
+    def purge_history(self, *, retention_days: int, observation_retention_days: int) -> dict[str, int]:
         cutoff = (datetime.now(tz=timezone.utc) - timedelta(days=retention_days)).isoformat()
+        observation_cutoff = (
+            datetime.now(tz=timezone.utc) - timedelta(days=observation_retention_days)
+        ).isoformat()
         deleted: dict[str, int] = {}
         with self._tx() as conn:
-            for table, column in (
-                ("network_observations", "seen_at"),
-                ("presence_sessions", "last_seen"),
-                ("rule_matches", "matched_at"),
-                ("emitted_events", "created_at"),
-                ("scan_runs", "started_at"),
+            network_catalog_before = conn.execute("SELECT COUNT(*) AS cnt FROM network_catalog").fetchone()
+            for table, column, current_cutoff in (
+                ("network_observations", "seen_at", observation_cutoff),
+                ("presence_sessions", "last_seen", cutoff),
+                ("rule_matches", "matched_at", cutoff),
+                ("emitted_events", "created_at", cutoff),
+                ("scan_runs", "started_at", cutoff),
             ):
-                cursor = conn.execute(f"DELETE FROM {table} WHERE {column} < ?", (cutoff,))
+                cursor = conn.execute(f"DELETE FROM {table} WHERE {column} < ?", (current_cutoff,))
                 deleted[table] = int(cursor.rowcount)
+            self._rebuild_network_catalog(conn=conn)
+            network_catalog_after = conn.execute("SELECT COUNT(*) AS cnt FROM network_catalog").fetchone()
+            deleted["network_catalog"] = max(
+                int(network_catalog_before["cnt"]) - int(network_catalog_after["cnt"]),
+                0,
+            )
         return deleted
 
     def latest_scan_state(self) -> dict[str, Any]:

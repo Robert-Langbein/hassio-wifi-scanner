@@ -10,7 +10,7 @@ WiFi presence tracking solution for Home Assistant with support for:
 
 - Configurable scan interval (default: 30 seconds)
 - One quiet scan window per weekday
-- SQLite persistence with automatic retention cleanup (default: 30 days)
+- SQLite persistence with hybrid retention cleanup (`network_observations` default: 3 days, summaries/sessions default: 30 days)
 - Structured scan logs in add-on/agent runtime (`log_level`: `error|warning|info|debug`)
 - Search/filter list of scanned WiFi networks
 - Frequency-band visibility (`2.4/5/6 GHz`) in network and observation tables
@@ -72,6 +72,8 @@ WiFi presence tracking solution for Home Assistant with support for:
 - `GET /v1/stats/short-repeat`
 - `POST /v1/history/purge`
 - `GET /v1/events`
+
+`OBSERVATION_RETENTION_DAYS` controls how long per-scan raw observations stay queryable. After expiry, scan-run details still exist, but `/v1/scan-runs/{id}` reports `raw_observations_available: false` and `/v1/scan-runs/{id}/observations` returns an empty list.
 
 ## Security notes
 

@@ -24,7 +24,7 @@ from .constants import (
 from .db import Database
 from .rules import RuleEngine
 from .scanner import BSSID_RE, ScanSource, to_observation
-from .types import NetworkObservation, ScanConfig
+from .types import NetworkObservation, RuleMatchEvent, ScanConfig
 
 _SCAN_LOGGER = logging.getLogger("wifi_presence_scanner.scan")
 _RUNTIME_LOGGER = logging.getLogger("wifi_presence_scanner.runtime")
@@ -71,9 +71,12 @@ class EventPublisher:
 
     def emit(self, *, event_type: str, payload: dict[str, object]) -> int:
         event_id = self._db.record_emitted_event(event_type=event_type, payload=payload)
+        self.forward(event_type=event_type, payload=payload)
+        return event_id
+
+    def forward(self, *, event_type: str, payload: dict[str, object]) -> None:
         if self._ha_api_url and self._ha_token:
             self._try_post_to_home_assistant(event_type=event_type, payload=payload)
-        return event_id
 
     def _try_post_to_home_assistant(self, *, event_type: str, payload: dict[str, object]) -> None:
         url = f"{self._ha_api_url}/events/{event_type}"
@@ -147,7 +150,10 @@ class ScannerService:
         now = _utc_now()
         if self._last_purge_at and (now - self._last_purge_at) < timedelta(hours=24):
             return
-        self._db.purge_history(retention_days=self._config.retention_days)
+        self._db.purge_history(
+            retention_days=self._config.retention_days,
+            observation_retention_days=self._config.observation_retention_days,
+        )
         self._last_purge_at = now
 
     def _is_quiet_window(self, dt: datetime) -> bool:
@@ -195,6 +201,17 @@ class ScannerService:
         if scan_run_id is not None:
             payload["scan_run_id"] = scan_run_id
         return payload
+
+    def _raw_observations_available(self, *, started_at: str | None) -> bool:
+        if not started_at:
+            return False
+        started_dt = datetime.fromisoformat(started_at)
+        cutoff = _utc_now() - timedelta(days=self._config.observation_retention_days)
+        return started_dt >= cutoff
+
+    def _forward_pending_events(self, events: list[RuleMatchEvent]) -> None:
+        for event in events:
+            self._publisher.forward(event_type=event.event_type, payload=event.payload)
 
     def perform_scan(self, *, trigger: str) -> dict[str, object]:
         timestamp_iso = _utc_now().isoformat()
@@ -248,21 +265,27 @@ class ScannerService:
                         )
                     )
 
-                self._db.insert_observations(scan_run_id=scan_run_id, observations=observations)
-                summary = self._handle_presence_and_rules(observations=observations, scan_run_id=scan_run_id)
-                duration_ms = int((time.monotonic() - started_monotonic) * 1000)
-                self._db.finish_scan_run(
-                    scan_run_id=scan_run_id,
-                    status="ok",
-                    error=None,
-                    seen_total=len(observations),
-                    new_count=summary["new_count"],
-                    disappeared_count=summary["disappeared_count"],
-                    rule_matches=summary["rule_matches"],
-                )
+                pending_events: list[RuleMatchEvent] = []
+                with self._db.transaction():
+                    self._db.insert_observations(scan_run_id=scan_run_id, observations=observations)
+                    summary, pending_events = self._handle_presence_and_rules(
+                        observations=observations,
+                        scan_run_id=scan_run_id,
+                    )
+                    duration_ms = int((time.monotonic() - started_monotonic) * 1000)
+                    self._db.finish_scan_run(
+                        scan_run_id=scan_run_id,
+                        status="ok",
+                        error=None,
+                        seen_total=len(observations),
+                        new_count=summary["new_count"],
+                        disappeared_count=summary["disappeared_count"],
+                        rule_matches=summary["rule_matches"],
+                    )
                 finished_at = _utc_now().isoformat()
                 self._last_scan_finished_at = finished_at
                 self._last_error = None
+                self._forward_pending_events(pending_events)
 
                 _SCAN_LOGGER.info(
                     "ts=%s level=info event=scan_completed run_id=%s interface=%s seen=%s new=%s "
@@ -297,16 +320,33 @@ class ScannerService:
                 elif "invalid accesspoints payload" in err.lower():
                     reason = "supervisor_payload_invalid"
                 duration_ms = int((time.monotonic() - started_monotonic) * 1000)
-                self._db.finish_scan_run(
-                    scan_run_id=scan_run_id,
-                    status="error",
-                    error=err,
-                    seen_total=0,
-                    new_count=0,
-                    disappeared_count=0,
-                    rule_matches=0,
+                failed_at = _utc_now().isoformat()
+                health_warning = RuleMatchEvent(
+                    event_type=EVENT_HEALTH_WARNING,
+                    payload={
+                        "scanner_source": self._config.source,
+                        "interface": self._config.interface,
+                        "reason": reason,
+                        "error": err,
+                        "at": failed_at,
+                        "scan_run_id": scan_run_id,
+                    },
                 )
-                self._last_scan_finished_at = _utc_now().isoformat()
+                with self._db.transaction():
+                    self._db.finish_scan_run(
+                        scan_run_id=scan_run_id,
+                        status="error",
+                        error=err,
+                        seen_total=0,
+                        new_count=0,
+                        disappeared_count=0,
+                        rule_matches=0,
+                    )
+                    self._db.record_emitted_event(
+                        event_type=health_warning.event_type,
+                        payload=health_warning.payload,
+                    )
+                self._last_scan_finished_at = failed_at
                 self._last_error = err
 
                 _SCAN_LOGGER.error(
@@ -321,17 +361,7 @@ class ScannerService:
                     err,
                 )
 
-                self._publisher.emit(
-                    event_type=EVENT_HEALTH_WARNING,
-                    payload={
-                        "scanner_source": self._config.source,
-                        "interface": self._config.interface,
-                        "reason": reason,
-                        "error": err,
-                        "at": self._last_scan_finished_at,
-                        "scan_run_id": scan_run_id,
-                    },
-                )
+                self._forward_pending_events([health_warning])
                 return {
                     "status": "error",
                     "error": err,
@@ -347,11 +377,12 @@ class ScannerService:
         *,
         observations: list[NetworkObservation],
         scan_run_id: int,
-    ) -> dict[str, int]:
+    ) -> tuple[dict[str, int], list[RuleMatchEvent]]:
         seen_bssids: set[str] = set()
         new_count = 0
         disappeared_count = 0
         rule_matches = 0
+        pending_events: list[RuleMatchEvent] = []
 
         for obs in observations:
             seen_bssids.add(obs.bssid)
@@ -367,10 +398,12 @@ class ScannerService:
             )
             if is_new:
                 new_count += 1
-                self._publisher.emit(
+                payload = self._base_payload(active_record=active, scan_run_id=scan_run_id)
+                self._db.record_emitted_event(
                     event_type=EVENT_WIFI_DISCOVERED,
-                    payload=self._base_payload(active_record=active, scan_run_id=scan_run_id),
+                    payload=payload,
                 )
+                pending_events.append(RuleMatchEvent(event_type=EVENT_WIFI_DISCOVERED, payload=payload))
                 _SCAN_LOGGER.debug(
                     "event=wifi_discovered run_id=%s ssid=%s bssid=%s rssi=%s",
                     scan_run_id,
@@ -392,7 +425,8 @@ class ScannerService:
                 payload["rule_name"] = rule.name
                 payload["confidence"] = result.confidence
                 payload["reason"] = result.reason
-                self._publisher.emit(event_type=EVENT_RULE_MATCHED, payload=payload)
+                self._db.record_emitted_event(event_type=EVENT_RULE_MATCHED, payload=payload)
+                pending_events.append(RuleMatchEvent(event_type=EVENT_RULE_MATCHED, payload=payload))
                 _SCAN_LOGGER.debug(
                     "event=rule_matched run_id=%s rule_id=%s ssid=%s bssid=%s confidence=%.3f",
                     scan_run_id,
@@ -434,7 +468,8 @@ class ScannerService:
                         "reason": {"ended_reason": "missing_scans"},
                         "scan_run_id": scan_run_id,
                     }
-                    self._publisher.emit(event_type=EVENT_WIFI_DISAPPEARED, payload=payload)
+                    self._db.record_emitted_event(event_type=EVENT_WIFI_DISAPPEARED, payload=payload)
+                    pending_events.append(RuleMatchEvent(event_type=EVENT_WIFI_DISAPPEARED, payload=payload))
                     _SCAN_LOGGER.debug(
                         "event=wifi_disappeared run_id=%s ssid=%s bssid=%s seen_count=%s",
                         scan_run_id,
@@ -443,11 +478,14 @@ class ScannerService:
                         payload["seen_count"],
                     )
 
-        return {
-            "new_count": new_count,
-            "disappeared_count": disappeared_count,
-            "rule_matches": rule_matches,
-        }
+        return (
+            {
+                "new_count": new_count,
+                "disappeared_count": disappeared_count,
+                "rule_matches": rule_matches,
+            },
+            pending_events,
+        )
 
     def get_health(self) -> dict[str, object]:
         latest_scan = self._db.latest_scan_state()
@@ -456,6 +494,7 @@ class ScannerService:
             "source": self._config.source,
             "interface": self._config.interface,
             "scan_interval_sec": self._config.scan_interval_sec,
+            "observation_retention_days": self._config.observation_retention_days,
             "last_scan_started_at": self._last_scan_started_at,
             "last_scan_finished_at": self._last_scan_finished_at,
             "last_error": self._last_error,
@@ -508,11 +547,20 @@ class ScannerService:
         result = self._db.get_scan_run(scan_run_id=scan_run_id)
         if not result:
             raise ValueError("scan_run_not_found")
+        raw_observations_available = self._raw_observations_available(
+            started_at=result.get("started_at"),
+        )
+        result["raw_observations_available"] = raw_observations_available
+        if not raw_observations_available:
+            result["observation_count"] = 0
         return result
 
     def list_scan_run_observations(self, *, scan_run_id: int, params: dict[str, str]) -> dict[str, object]:
         limit = max(1, min(int(params.get("limit", "250")), 1000))
         offset = max(0, int(params.get("offset", "0")))
+        run = self._db.get_scan_run(scan_run_id=scan_run_id)
+        if not run or not self._raw_observations_available(started_at=run.get("started_at")):
+            return {"items": [], "limit": limit, "offset": offset}
         items = self._db.list_scan_run_observations(
             scan_run_id=scan_run_id,
             limit=limit,
@@ -631,4 +679,7 @@ class ScannerService:
         }
 
     def purge_history(self) -> dict[str, int]:
-        return self._db.purge_history(retention_days=self._config.retention_days)
+        return self._db.purge_history(
+            retention_days=self._config.retention_days,
+            observation_retention_days=self._config.observation_retention_days,
+        )

@@ -535,7 +535,10 @@ async function openRunDetail(scanRunId) {
 
   const rows = Array.isArray(observations.items) ? observations.items : [];
   if (rows.length === 0) {
-    elements.runObservationsBody.innerHTML = '<tr><td colspan="6">No observations</td></tr>';
+    const emptyMessage = run.raw_observations_available === false
+      ? "Raw observations expired"
+      : "No observations";
+    elements.runObservationsBody.innerHTML = `<tr><td colspan="6">${escapeHtml(emptyMessage)}</td></tr>`;
   }
 
   rows.forEach((item) => {

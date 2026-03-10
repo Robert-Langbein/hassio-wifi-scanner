@@ -6,6 +6,7 @@ import re
 from datetime import datetime, time
 
 from .constants import (
+    DEFAULT_OBSERVATION_RETENTION_DAYS,
     DEFAULT_DISAPPEAR_MISSED_SCANS,
     DEFAULT_RETENTION_DAYS,
     DEFAULT_SCAN_INTERVAL_SEC,
@@ -107,6 +108,13 @@ def load_scan_config(*, source: str, default_interface: str) -> ScanConfig:
     if retention_days < 1 or retention_days > 365:
         raise ValueError("RETENTION_DAYS must be between 1 and 365")
 
+    default_observation_retention_days = min(retention_days, DEFAULT_OBSERVATION_RETENTION_DAYS)
+    observation_retention_days = int(
+        os.getenv("OBSERVATION_RETENTION_DAYS", str(default_observation_retention_days))
+    )
+    if observation_retention_days < 1 or observation_retention_days > retention_days:
+        raise ValueError("OBSERVATION_RETENTION_DAYS must be between 1 and RETENTION_DAYS")
+
     privacy_mode = os.getenv("PRIVACY_MODE", "false").strip().lower() in {
         "1",
         "true",
@@ -130,6 +138,7 @@ def load_scan_config(*, source: str, default_interface: str) -> ScanConfig:
         scan_interval_sec=scan_interval_sec,
         disappear_missed_scans=disappear_missed_scans,
         retention_days=retention_days,
+        observation_retention_days=observation_retention_days,
         privacy_mode=privacy_mode,
         privacy_salt=privacy_salt,
         quiet_windows=quiet_windows,

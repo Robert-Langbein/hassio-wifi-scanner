@@ -19,6 +19,7 @@ class ScanConfig:
     scan_interval_sec: int
     disappear_missed_scans: int
     retention_days: int
+    observation_retention_days: int
     privacy_mode: bool
     privacy_salt: str
     quiet_windows: list[QuietWindow]

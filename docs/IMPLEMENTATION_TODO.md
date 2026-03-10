@@ -11,6 +11,7 @@
 - [x] Implement scheduler with scan interval and quiet windows.
 - [x] Implement ignore filters, privacy hash mode, and config validation.
 - [x] Implement health state and warning event behavior on scan failures.
+- [x] Reduce DB growth via `network_catalog`, batched scan writes, and short raw-observation retention.
 
 ## Scanner implementations
 - [x] Implement Supervisor scanner using Supervisor network accesspoints endpoint.
